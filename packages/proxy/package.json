@@ -1,0 +1,28 @@
+{
+  "name": "@claudenomics/proxy",
+  "version": "0.1.0",
+  "description": "Local HTTP proxy that forwards Anthropic/OpenAI API calls and extracts token usage.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@claudenomics/logger": "*",
+    "undici": "^6.19.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
