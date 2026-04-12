@@ -6,11 +6,18 @@ import { listen } from './loopback.js';
 import { saveSession, type Session } from './session.js';
 
 const log = createLogger('claudenomics');
+
 const DEFAULT_AUTH_URL = 'http://localhost:3000/cli-auth';
 const TIMEOUT_MS = 5 * 60 * 1000;
 
-export async function login(): Promise<Session> {
-  const target = parseAuthUrl(process.env.CLAUDENOMICS_AUTH_URL ?? DEFAULT_AUTH_URL);
+export interface LoginOptions {
+  authUrl?: string;
+}
+
+export async function login(opts: LoginOptions = {}): Promise<Session> {
+  const target = parseAuthUrl(opts.authUrl ?? DEFAULT_AUTH_URL);
+  if (opts.authUrl) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
+
   const state = randomBytes(32).toString('hex');
   const server = await listen(state);
 
@@ -35,13 +42,13 @@ export async function login(): Promise<Session> {
     ]);
     const session: Session = {
       version: 1,
-      token: cb.token,
       userId: cb.userId,
       wallet: cb.wallet,
       email: cb.email,
       createdAt: Date.now(),
+      expiresAt: parseJwtExpiry(cb.token),
     };
-    await saveSession(session);
+    await saveSession(session, cb.token);
     return session;
   } finally {
     process.off('SIGINT', onSigint);
@@ -55,10 +62,26 @@ function parseAuthUrl(raw: string): URL {
   try {
     url = new URL(raw);
   } catch {
-    throw new AuthError(`invalid CLAUDENOMICS_AUTH_URL: ${raw}`);
+    throw new AuthError(`invalid auth URL: ${raw}`);
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new AuthError(`CLAUDENOMICS_AUTH_URL must be http(s), got ${url.protocol}`);
+  if (url.protocol === 'https:') return url;
+  if (url.protocol === 'http:' && isLoopbackHost(url.hostname)) return url;
+  throw new AuthError(
+    `auth URL must be https (or http on loopback for dev), got ${url.protocol}//${url.hostname}`,
+  );
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+}
+
+function parseJwtExpiry(token: string): number | undefined {
+  const parts = token.split('.');
+  if (parts.length !== 3) return undefined;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : undefined;
+  } catch {
+    return undefined;
   }
-  return url;
 }
