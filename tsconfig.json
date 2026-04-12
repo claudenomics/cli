@@ -4,6 +4,7 @@
     { "path": "packages/logger" },
     { "path": "packages/usage" },
     { "path": "packages/proxy" },
+    { "path": "packages/auth" },
     { "path": "app" }
   ]
 }

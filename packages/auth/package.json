@@ -1,0 +1,27 @@
+{
+  "name": "@claudenomics/auth",
+  "version": "0.1.0",
+  "description": "Browser-loopback login + local session storage for the claudenomics CLI.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@claudenomics/logger": "*"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
