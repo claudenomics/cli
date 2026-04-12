@@ -9,6 +9,7 @@
   "references": [
     { "path": "../packages/logger" },
     { "path": "../packages/usage" },
-    { "path": "../packages/proxy" }
+    { "path": "../packages/proxy" },
+    { "path": "../packages/auth" }
   ]
 }
