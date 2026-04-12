@@ -1,5 +1,15 @@
+import { buildChildEnv } from './env.js';
 import type { ResponsePayload, TokenUsage, VendorConfig } from './index.js';
 import { splitSSE, tryParse } from './sse.js';
+
+const ANTHROPIC_ALLOW: readonly string[] = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL',
+  'CLAUDE_CONFIG_DIR',
+];
 
 interface Usage {
   input_tokens?: number;
@@ -57,11 +67,10 @@ export const anthropic: VendorConfig = {
     },
   },
   childEnv: (proxyUrl, base) => {
-    const env: NodeJS.ProcessEnv = { ...base };
-    env.ANTHROPIC_BASE_URL = proxyUrl;
-    if (env.ANTHROPIC_API_KEY && !env.ANTHROPIC_AUTH_TOKEN) {
-      env.ANTHROPIC_AUTH_TOKEN = env.ANTHROPIC_API_KEY;
+    const overrides: NodeJS.ProcessEnv = { ANTHROPIC_BASE_URL: proxyUrl };
+    if (base.ANTHROPIC_API_KEY && !base.ANTHROPIC_AUTH_TOKEN) {
+      overrides.ANTHROPIC_AUTH_TOKEN = base.ANTHROPIC_API_KEY;
     }
-    return env;
+    return buildChildEnv(base, ANTHROPIC_ALLOW, overrides);
   },
 };

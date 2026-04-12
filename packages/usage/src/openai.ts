@@ -1,5 +1,15 @@
+import { buildChildEnv } from './env.js';
 import type { ResponsePayload, TokenUsage, VendorConfig } from './index.js';
 import { splitSSE, tryParse } from './sse.js';
+
+const OPENAI_ALLOW: readonly string[] = [
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'OPENAI_PROJECT',
+  'OPENAI_ORG_ID',
+  'OPENAI_ORGANIZATION',
+  'CODEX_HOME',
+];
 
 const ZERO: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
@@ -65,9 +75,6 @@ export const openai: VendorConfig = {
       return isStream(contentType) ? extractFromStream(text) : extractFromBody(text);
     },
   },
-  childEnv: (proxyUrl, base) => {
-    const env: NodeJS.ProcessEnv = { ...base };
-    env.OPENAI_BASE_URL = `${proxyUrl}/v1`;
-    return env;
-  },
+  childEnv: (proxyUrl, base) =>
+    buildChildEnv(base, OPENAI_ALLOW, { OPENAI_BASE_URL: `${proxyUrl}/v1` }),
 };
