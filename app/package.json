@@ -15,6 +15,7 @@
     "clean": "tsc -b --clean"
   },
   "dependencies": {
+    "@claudenomics/auth": "*",
     "@claudenomics/logger": "*",
     "@claudenomics/proxy": "*",
     "@claudenomics/usage": "*",
