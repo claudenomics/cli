@@ -16,8 +16,9 @@ const program = new Command('claudenomics')
 program
   .command('login')
   .description('Sign in and create (or attach) your Solana wallet via Privy.')
-  .action(async () => {
-    const s = await login();
+  .option('--auth-url <url>', 'override the default auth URL (dev only)')
+  .action(async (opts: { authUrl?: string }) => {
+    const s = await login({ authUrl: opts.authUrl });
     process.stdout.write(`${chalk.green('✓')} ${formatIdentity(s)}\n`);
   });
 
