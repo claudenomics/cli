@@ -1,0 +1,25 @@
+{
+  "name": "@claudenomics/usage",
+  "version": "0.1.0",
+  "description": "Per-vendor token usage extractors for LLM API responses.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "clean": "tsc -b --clean"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
