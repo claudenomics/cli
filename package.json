@@ -1,0 +1,27 @@
+{
+  "name": "claudenomics",
+  "version": "0.1.0",
+  "description": "claudenomics CLI",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "app"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc -b --noEmit",
+    "test": "npm -ws --if-present run test",
+    "clean": "tsc -b --clean",
+    "start": "node app/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "typescript": "^5.5.3",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
