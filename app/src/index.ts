@@ -15,6 +15,7 @@ import { applyEmbeddedDefaults } from './defaults.js';
 import { CliError } from './errors.js';
 import { formatIdentity } from './format.js';
 import { runStatus } from './status.js';
+import { runUpdate } from './update-check.js';
 import { runUsage } from './usage.js';
 
 applyEmbeddedDefaults();
@@ -25,8 +26,11 @@ configureApi({
 
 const log = createLogger('claudenomics');
 
+declare const __CLAUDENOMICS_VERSION__: string;
+
 const program = new Command('claudenomics')
   .description('Transparent wrapper around claude-code and codex with token accounting.')
+  .version(__CLAUDENOMICS_VERSION__, '-v, --version', 'show installed version')
   .option('--verbose', 'enable debug logging', () => setLevel('debug'));
 
 program
@@ -66,6 +70,13 @@ program
   .description('Check session, enclave, backend reachability, and pending receipts.')
   .action(async () => {
     await runStatus();
+  });
+
+program
+  .command('update')
+  .description('Check npm for a newer version and print the upgrade command.')
+  .action(async () => {
+    await runUpdate();
   });
 
 for (const spec of BUILTIN_COMMANDS) program.addCommand(passthroughCommand(spec));
