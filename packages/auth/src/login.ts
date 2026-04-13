@@ -2,9 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { createLogger } from '@claudenomics/logger';
 import { openBrowser } from './browser.js';
 import { AuthError } from './errors.js';
-import { parseJwtExpiryUnsafe, verifyJwt } from './jwt.js';
+import { verifyJwt } from './jwt.js';
 import { listen } from './loopback.js';
+import { createPkcePair } from './pkce.js';
 import { createXdgSessionStore, type SessionStore, type Session } from './session-store.js';
+import { exchangeCode } from './token-exchange.js';
 
 const log = createLogger('claudenomics');
 
@@ -12,6 +14,7 @@ const TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface LoginOptions {
   authUrl?: string;
+  tokenUrl?: string;
   sessionStore?: SessionStore;
 }
 
@@ -40,17 +43,35 @@ function resolveAuthUrl(opts: LoginOptions): string {
   );
 }
 
+function defaultTokenUrl(authUrl: URL): URL {
+  return new URL('/api/token', authUrl.origin);
+}
+
+function resolveTokenUrl(opts: LoginOptions, authUrl: URL): URL {
+  const raw = opts.tokenUrl ?? process.env.CLAUDENOMICS_TOKEN_URL;
+  if (!raw) return defaultTokenUrl(authUrl);
+  try {
+    return new URL(raw);
+  } catch {
+    throw new AuthError(`invalid token URL: ${raw}`);
+  }
+}
+
 export async function login(opts: LoginOptions = {}): Promise<Session> {
   const store = opts.sessionStore ?? createXdgSessionStore();
   const target = parseAuthUrl(resolveAuthUrl(opts));
+  const tokenUrl = resolveTokenUrl(opts, target);
   const override = opts.authUrl || process.env.CLAUDENOMICS_AUTH_URL !== undefined;
   if (opts.authUrl) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
 
   const state = randomBytes(32).toString('hex');
+  const pkce = createPkcePair();
   const server = await listen(state);
 
   target.searchParams.set('callback', server.url);
   target.searchParams.set('state', state);
+  target.searchParams.set('code_challenge', pkce.challenge);
+  target.searchParams.set('code_challenge_method', pkce.method);
 
   log.info(`opening ${target.origin}${target.pathname}`);
   if (!openBrowser(target.toString())) log.warn('could not open browser — check stderr for the URL');
@@ -69,12 +90,12 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
       }),
     ]);
 
+    const exchanged = await exchangeCode(tokenUrl, cb.code, pkce.verifier);
+
     const jwtCfg = loadJwtConfig();
-    let expiresAt: number | undefined;
     if (jwtCfg) {
       try {
-        const { payload } = await verifyJwt(cb.token, jwtCfg);
-        expiresAt = typeof payload.exp === 'number' ? payload.exp * 1000 : undefined;
+        await verifyJwt(exchanged.token, jwtCfg);
       } catch (err) {
         throw new AuthError(`token failed JWT verification: ${(err as Error).message}`);
       }
@@ -84,18 +105,17 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
       );
     } else {
       log.warn('JWT verification skipped (dev-override auth URL, no JWKS config)');
-      expiresAt = parseJwtExpiryUnsafe(cb.token);
     }
 
     const session: Session = {
       version: 1,
-      userId: cb.userId,
-      wallet: cb.wallet,
-      ...(cb.email ? { email: cb.email } : {}),
+      userId: exchanged.user_id,
+      wallet: exchanged.wallet,
+      ...(exchanged.email ? { email: exchanged.email } : {}),
       createdAt: Date.now(),
-      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      expiresAt: exchanged.expires_at,
     };
-    await store.save(session, cb.token);
+    await store.save(session, exchanged.token);
     return session;
   } finally {
     process.off('SIGINT', onSigint);
