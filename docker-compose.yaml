@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     ports:
       - "8787:8787"
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
     environment:
       DEFAULT_UPSTREAM: anthropic
       DSTACK_MODE: production
