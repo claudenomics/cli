@@ -1,0 +1,4 @@
+name = "claudenomics-enclave"
+compose_file = "docker-compose.yaml"
+public_logs = true
+public_sysinfo = true
