@@ -1,12 +1,16 @@
 import { execFileSync, spawn } from 'node:child_process';
 import chalk from 'chalk';
 import { getSessionToken, loadSession } from '@claudenomics/auth';
+import { createLogger } from '@claudenomics/logger';
 import { startProxy, type ResponseHandler } from '@claudenomics/proxy';
 import type { TokenUsage } from '@claudenomics/usage';
 import { getVendor } from './vendors.js';
 import { BinaryNotFoundError, CliError } from './errors.js';
-import { createFileReceiptStore } from './receipt-store.js';
-import { extractAndStoreReceipt } from './receipts.js';
+import { createFileReceiptStore, type ReceiptStore } from './receipt-store.js';
+import { createHttpReceiptSubmitter, type ReceiptSubmitter } from './receipt-submitter.js';
+import { persistAndSubmitReceipt, retryPendingReceipts } from './receipts.js';
+
+const log = createLogger('claudenomics·runner');
 
 const SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
 
@@ -40,11 +44,51 @@ async function loadEnclaveConfig(): Promise<EnclaveConfig | null> {
   };
 }
 
+function resolveReceiptsUrl(): URL | null {
+  const explicit = process.env.CLAUDENOMICS_RECEIPTS_URL;
+  if (explicit) {
+    try {
+      return new URL(explicit);
+    } catch {
+      log.warn(`invalid CLAUDENOMICS_RECEIPTS_URL: ${explicit}`);
+      return null;
+    }
+  }
+  const auth = process.env.CLAUDENOMICS_AUTH_URL;
+  if (!auth) return null;
+  try {
+    return new URL('/api/receipts', new URL(auth).origin);
+  } catch {
+    return null;
+  }
+}
+
+function buildSubmitter(): ReceiptSubmitter | null {
+  const endpoint = resolveReceiptsUrl();
+  if (!endpoint) {
+    log.debug('no receipts URL configured — receipts will be saved locally only');
+    return null;
+  }
+  return createHttpReceiptSubmitter({ endpoint, getToken: getSessionToken });
+}
+
 export async function run(vendorName: string, binary: string, args: string[]): Promise<number> {
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
   const totals: TokenUsage = { inputTokens: 0, outputTokens: 0 };
   const enclave = await loadEnclaveConfig();
+
+  let receiptStore: ReceiptStore | null = null;
+  let submitter: ReceiptSubmitter | null = null;
+  if (enclave) {
+    receiptStore = createFileReceiptStore();
+    submitter = buildSubmitter();
+    if (submitter) {
+      retryPendingReceipts(receiptStore, submitter).catch((err) => {
+        log.debug('pending retry failed:', (err as Error).message);
+      });
+    }
+  }
 
   const countTokens: ResponseHandler = (response) => {
     const usage = vendor.extractor.extract(response);
@@ -53,7 +97,7 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   };
 
   const handlers: ResponseHandler[] = [countTokens];
-  if (enclave) handlers.push(extractAndStoreReceipt(createFileReceiptStore()));
+  if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore, submitter));
 
   const proxy = await startProxy({
     upstream: enclave?.upstream ?? new URL(vendor.upstream),
