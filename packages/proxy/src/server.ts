@@ -23,10 +23,12 @@ export interface ProxiedResponse {
 
 export type ResponseHandler = (response: ProxiedResponse) => void | Promise<void>;
 
+export type RequestHeaders = Record<string, string>;
+
 export interface StartProxyOptions {
   upstream: URL;
   onResponse?: ResponseHandler | readonly ResponseHandler[];
-  requestHeaders?: Record<string, string>;
+  requestHeaders?: () => Promise<RequestHeaders> | RequestHeaders;
 }
 
 export interface ProxyHandle {
@@ -36,7 +38,7 @@ export interface ProxyHandle {
 
 export async function startProxy(options: StartProxyOptions): Promise<ProxyHandle> {
   const handlers = normalizeHandlers(options.onResponse);
-  const injectHeaders = options.requestHeaders ?? {};
+  const resolveHeaders = options.requestHeaders ?? (() => ({}));
 
   const server = createServer(async (req, res) => {
     const upstreamUrl = new URL(req.url ?? '/', options.upstream);
@@ -44,10 +46,15 @@ export async function startProxy(options: StartProxyOptions): Promise<ProxyHandl
 
     let response: ProxiedResponse;
     try {
+      const injectHeaders = await resolveHeaders();
       response = await forward(req, res, upstreamUrl, injectHeaders);
     } catch (err) {
       const message = (err as Error).message;
-      log.warn('forward error:', message);
+      if (isBenignClose(err)) {
+        log.debug('forward aborted:', message);
+      } else {
+        log.warn('forward error:', message);
+      }
       if (!res.headersSent) {
         res.writeHead(502, { 'content-type': 'text/plain' });
         res.end(`claudenomics proxy error: ${message}\n`);
@@ -95,6 +102,20 @@ function normalizeHandlers(
   if (onResponse === undefined) return [];
   if (typeof onResponse === 'function') return [onResponse];
   return onResponse;
+}
+
+const BENIGN_CLOSE_PATTERNS = [
+  /other side closed/i,
+  /premature close/i,
+  /socket hang up/i,
+  /ECONNRESET/,
+];
+
+function isBenignClose(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  if (e?.code === 'ECONNRESET') return true;
+  const msg = e?.message;
+  return typeof msg === 'string' && BENIGN_CLOSE_PATTERNS.some((re) => re.test(msg));
 }
 
 async function forward(
