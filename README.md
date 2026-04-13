@@ -48,7 +48,7 @@ All URLs default to production. Override any of them to point at a local stack.
 
 | variable | default |
 | --- | --- |
-| `CLAUDENOMICS_AUTH_URL` | `https://auth.claudenomics.xyz` |
+| `CLAUDENOMICS_AUTH_URL` | `https://auth.claudenomics.xyz/cli-auth` |
 | `CLAUDENOMICS_JWKS_URL` | `https://auth.claudenomics.xyz/.well-known/jwks.json` |
 | `CLAUDENOMICS_JWT_ISSUER` | `https://auth.claudenomics.xyz` |
 | `CLAUDENOMICS_ENCLAVE_URL` | Phala TDX enclave |

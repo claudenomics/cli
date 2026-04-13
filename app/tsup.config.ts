@@ -19,7 +19,7 @@ export default defineConfig({
   },
   define: {
     __CLAUDENOMICS_VERSION__: JSON.stringify(pkg.version),
-    __CLAUDENOMICS_AUTH_URL__: JSON.stringify('https://auth.claudenomics.xyz'),
+    __CLAUDENOMICS_AUTH_URL__: JSON.stringify('https://auth.claudenomics.xyz/cli-auth'),
     __CLAUDENOMICS_JWKS_URL__: JSON.stringify('https://auth.claudenomics.xyz/.well-known/jwks.json'),
     __CLAUDENOMICS_JWT_ISSUER__: JSON.stringify('https://auth.claudenomics.xyz'),
     __CLAUDENOMICS_ENCLAVE_URL__: JSON.stringify(
