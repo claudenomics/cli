@@ -5,8 +5,18 @@ Wrap `claude` and `codex` with attested, wallet-bound token metering.
 ## Install
 
 ```sh
-npm install -g claudenomics
+npm install -g @claudenomics/cli
 ```
+
+<details>
+<summary>Other package managers</summary>
+
+```sh
+pnpm add -g @claudenomics/cli
+yarn global add @claudenomics/cli
+bun install -g @claudenomics/cli
+```
+</details>
 
 Requires Node 20+ and either `claude` or `codex` on `PATH`.
 
