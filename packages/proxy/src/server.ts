@@ -18,6 +18,7 @@ export interface ProxiedResponse {
   requestBody: Buffer;
   responseBody: Buffer;
   contentType: string | undefined;
+  responseHeaders: Record<string, string | string[]>;
 }
 
 export type ResponseHandler = (response: ProxiedResponse) => void | Promise<void>;
@@ -25,6 +26,7 @@ export type ResponseHandler = (response: ProxiedResponse) => void | Promise<void
 export interface StartProxyOptions {
   upstream: URL;
   onResponse?: ResponseHandler | readonly ResponseHandler[];
+  requestHeaders?: Record<string, string>;
 }
 
 export interface ProxyHandle {
@@ -34,6 +36,7 @@ export interface ProxyHandle {
 
 export async function startProxy(options: StartProxyOptions): Promise<ProxyHandle> {
   const handlers = normalizeHandlers(options.onResponse);
+  const injectHeaders = options.requestHeaders ?? {};
 
   const server = createServer(async (req, res) => {
     const upstreamUrl = new URL(req.url ?? '/', options.upstream);
@@ -41,7 +44,7 @@ export async function startProxy(options: StartProxyOptions): Promise<ProxyHandl
 
     let response: ProxiedResponse;
     try {
-      response = await forward(req, res, upstreamUrl);
+      response = await forward(req, res, upstreamUrl, injectHeaders);
     } catch (err) {
       const message = (err as Error).message;
       log.warn('forward error:', message);
@@ -98,16 +101,18 @@ async function forward(
   clientReq: IncomingMessage,
   clientRes: ServerResponse,
   upstreamUrl: URL,
+  injectHeaders: Record<string, string>,
 ): Promise<ProxiedResponse> {
   const requestBody = await readBody(clientReq);
   const upstream = await undiciRequest(upstreamUrl, {
     method: (clientReq.method ?? 'GET') as Dispatcher.HttpMethod,
-    headers: filterHeaders(clientReq.headers, { host: upstreamUrl.host }),
+    headers: filterHeaders(clientReq.headers, { host: upstreamUrl.host, ...injectHeaders }),
     body: requestBody.length > 0 ? requestBody : undefined,
   });
 
   const headers = upstream.headers as Record<string, string | string[] | undefined>;
-  clientRes.writeHead(upstream.statusCode, filterHeaders(headers));
+  const filteredResponseHeaders = filterHeaders(headers);
+  clientRes.writeHead(upstream.statusCode, filteredResponseHeaders);
 
   const contentType = readHeader(headers, 'content-type');
   const chunks: Buffer[] = [];
@@ -126,6 +131,7 @@ async function forward(
     requestBody,
     responseBody: Buffer.concat(chunks),
     contentType,
+    responseHeaders: filteredResponseHeaders,
   };
 }
 
