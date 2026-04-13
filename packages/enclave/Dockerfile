@@ -2,14 +2,9 @@
 FROM node:20-alpine AS build
 WORKDIR /repo
 COPY package.json package-lock.json tsconfig.base.json tsconfig.json ./
-COPY packages/logger packages/logger
-COPY packages/usage packages/usage
-COPY packages/enclave packages/enclave
-RUN npm ci --workspaces --include-workspace-root \
-  --omit=optional \
-  --workspace @claudenomics/logger \
-  --workspace @claudenomics/usage \
-  --workspace @claudenomics/enclave
+COPY packages packages
+COPY app app
+RUN npm ci
 RUN npm run build --workspace @claudenomics/enclave
 
 FROM node:20-alpine
