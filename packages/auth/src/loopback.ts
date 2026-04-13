@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AuthError } from './errors.js';
@@ -15,8 +16,16 @@ const HEADERS = {
   'referrer-policy': 'no-referrer',
 };
 
+function safeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
 function parseCallback(q: URLSearchParams, expectedState: string): Callback | string {
-  if (q.get('state') !== expectedState) return 'state mismatch';
+  const state = q.get('state');
+  if (!state || !safeEqual(state, expectedState)) return 'state mismatch';
   const error = q.get('error');
   if (error) return error;
   const token = q.get('token');

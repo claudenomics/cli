@@ -2,20 +2,48 @@ import { randomBytes } from 'node:crypto';
 import { createLogger } from '@claudenomics/logger';
 import { openBrowser } from './browser.js';
 import { AuthError } from './errors.js';
+import { parseJwtExpiryUnsafe, verifyJwt } from './jwt.js';
 import { listen } from './loopback.js';
-import { saveSession, type Session } from './session.js';
+import { createXdgSessionStore, type SessionStore, type Session } from './session-store.js';
 
 const log = createLogger('claudenomics');
 
-const DEFAULT_AUTH_URL = 'http://localhost:3000/cli-auth';
 const TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface LoginOptions {
   authUrl?: string;
+  sessionStore?: SessionStore;
+}
+
+interface JwtVerifyConfig {
+  jwksUrl: string;
+  issuer: string;
+  audience?: string;
+}
+
+function loadJwtConfig(): JwtVerifyConfig | null {
+  const jwksUrl = process.env.CLAUDENOMICS_JWKS_URL;
+  const issuer = process.env.CLAUDENOMICS_JWT_ISSUER;
+  if (!jwksUrl || !issuer) return null;
+  const cfg: JwtVerifyConfig = { jwksUrl, issuer };
+  const audience = process.env.CLAUDENOMICS_JWT_AUDIENCE;
+  if (audience) cfg.audience = audience;
+  return cfg;
+}
+
+function resolveAuthUrl(opts: LoginOptions): string {
+  if (opts.authUrl) return opts.authUrl;
+  const env = process.env.CLAUDENOMICS_AUTH_URL;
+  if (env) return env;
+  throw new AuthError(
+    'no auth URL configured — set CLAUDENOMICS_AUTH_URL or pass --auth-url',
+  );
 }
 
 export async function login(opts: LoginOptions = {}): Promise<Session> {
-  const target = parseAuthUrl(opts.authUrl ?? DEFAULT_AUTH_URL);
+  const store = opts.sessionStore ?? createXdgSessionStore();
+  const target = parseAuthUrl(resolveAuthUrl(opts));
+  const override = opts.authUrl || process.env.CLAUDENOMICS_AUTH_URL !== undefined;
   if (opts.authUrl) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
 
   const state = randomBytes(32).toString('hex');
@@ -24,8 +52,8 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
   target.searchParams.set('callback', server.url);
   target.searchParams.set('state', state);
 
-  log.info(`opening ${target}`);
-  if (!openBrowser(target.toString())) log.warn(`could not open browser — open this URL manually: ${target}`);
+  log.info(`opening ${target.origin}${target.pathname}`);
+  if (!openBrowser(target.toString())) log.warn('could not open browser — check stderr for the URL');
 
   let timer: NodeJS.Timeout | undefined;
   const onSigint = (): void => {
@@ -40,15 +68,34 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
         timer = setTimeout(() => rej(new AuthError('login timed out after 5m')), TIMEOUT_MS);
       }),
     ]);
+
+    const jwtCfg = loadJwtConfig();
+    let expiresAt: number | undefined;
+    if (jwtCfg) {
+      try {
+        const { payload } = await verifyJwt(cb.token, jwtCfg);
+        expiresAt = typeof payload.exp === 'number' ? payload.exp * 1000 : undefined;
+      } catch (err) {
+        throw new AuthError(`token failed JWT verification: ${(err as Error).message}`);
+      }
+    } else if (!override) {
+      throw new AuthError(
+        'CLAUDENOMICS_JWKS_URL and CLAUDENOMICS_JWT_ISSUER must be set for production logins',
+      );
+    } else {
+      log.warn('JWT verification skipped (dev-override auth URL, no JWKS config)');
+      expiresAt = parseJwtExpiryUnsafe(cb.token);
+    }
+
     const session: Session = {
       version: 1,
       userId: cb.userId,
       wallet: cb.wallet,
-      email: cb.email,
+      ...(cb.email ? { email: cb.email } : {}),
       createdAt: Date.now(),
-      expiresAt: parseJwtExpiry(cb.token),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
     };
-    await saveSession(session, cb.token);
+    await store.save(session, cb.token);
     return session;
   } finally {
     process.off('SIGINT', onSigint);
@@ -73,15 +120,4 @@ function parseAuthUrl(raw: string): URL {
 
 function isLoopbackHost(host: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
-}
-
-function parseJwtExpiry(token: string): number | undefined {
-  const parts = token.split('.');
-  if (parts.length !== 3) return undefined;
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as { exp?: unknown };
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : undefined;
-  } catch {
-    return undefined;
-  }
 }
