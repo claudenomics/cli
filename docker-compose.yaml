@@ -1,0 +1,11 @@
+services:
+  enclave:
+    image: ghcr.io/claudenomics/enclave:latest
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      UPSTREAM: anthropic
+      DSTACK_MODE: production
+      PORT: "8787"
+      CLAUDENOMICS_LOG: info
