@@ -1,6 +1,6 @@
 services:
   enclave:
-    image: ghcr.io/claudenomics/enclave:latest
+    image: ghcr.io/claudenomics/enclave:ae8799c
     restart: unless-stopped
     ports:
       - "8787:8787"
