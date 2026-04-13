@@ -1,6 +1,7 @@
 services:
   enclave:
     image: ghcr.io/claudenomics/enclave:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "8787:8787"
