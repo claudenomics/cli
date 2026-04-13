@@ -15,25 +15,32 @@ import {
 import type { RateLimiter } from './rate-limiter.js';
 import { encodeReceipt, signReceipt, type Receipt } from './receipt.js';
 import type { UpstreamClient, UpstreamResponse } from './upstream-client.js';
-import { extractMeta, type SelectedVendor } from './vendor.js';
+import {
+  extractMeta,
+  resolveVendor,
+  type SelectedVendor,
+  type Vendor,
+  type VendorRegistry,
+} from './vendor.js';
 
 const WALLET_HEADER = 'x-claudenomics-wallet';
+const VENDOR_HEADER = 'x-claudenomics-vendor';
 const RECEIPT_HEADER = 'x-claudenomics-receipt';
 const RECEIPT_SSE_EVENT = 'claudenomics-receipt';
 const ERROR_SSE_EVENT = 'claudenomics-error';
-const STRIPPED_HEADERS = [WALLET_HEADER, CLAUDENOMICS_AUTH_HEADER, ...PROXY_UNSAFE];
+const STRIPPED_HEADERS = [WALLET_HEADER, CLAUDENOMICS_AUTH_HEADER, VENDOR_HEADER, ...PROXY_UNSAFE];
 
 export interface ProxyService {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
 }
 
 export interface ProxyDeps {
-  upstreamBase: URL;
+  vendors: VendorRegistry;
+  defaultVendor: Vendor | null;
   upstream: UpstreamClient;
   auth: AuthService;
   rateLimiter: RateLimiter;
   attestor: Attestor;
-  vendor: SelectedVendor;
   config: ServerConfig;
 }
 
@@ -46,8 +53,11 @@ export function createProxyService(deps: ProxyDeps): ProxyService {
         return writeJson(res, 429, { error: 'rate limit exceeded' });
       }
 
-      const target = resolveUpstreamUrl(req.url, deps.upstreamBase);
+      const vendor = requireVendor(req, deps);
+      const upstreamBase = new URL(vendor.config.upstream);
+      const target = resolveUpstreamUrl(req.url, upstreamBase);
       const requestBody = await readBodyCapped(req, deps.config.maxRequestBytes);
+
       const upstreamRes = await deps.upstream.forward({
         method: req.method ?? 'GET',
         url: target,
@@ -57,9 +67,9 @@ export function createProxyService(deps: ProxyDeps): ProxyService {
       });
 
       if (upstreamRes.contentType?.includes('text/event-stream')) {
-        await pipeStreamed(upstreamRes, wallet, res, deps);
+        await pipeStreamed(upstreamRes, vendor, wallet, res, deps);
       } else {
-        await pipeBuffered(upstreamRes, wallet, res, deps);
+        await pipeBuffered(upstreamRes, vendor, wallet, res, deps);
       }
     },
   };
@@ -69,6 +79,19 @@ function requireWallet(req: IncomingMessage): string {
   const wallet = readSingleHeader(req.headers, WALLET_HEADER);
   if (!wallet) throw new AuthError(`missing ${WALLET_HEADER} header`, 400);
   return wallet;
+}
+
+function requireVendor(req: IncomingMessage, deps: ProxyDeps): SelectedVendor {
+  const requested = readSingleHeader(req.headers, VENDOR_HEADER);
+  const vendor = resolveVendor(deps.vendors, requested, deps.defaultVendor);
+  if (!vendor) {
+    const supported = Object.keys(deps.vendors).join(', ');
+    throw new HttpError(
+      `unknown or missing vendor (header ${VENDOR_HEADER} required, supported: ${supported})`,
+      400,
+    );
+  }
+  return vendor;
 }
 
 function resolveUpstreamUrl(reqUrl: string | undefined, base: URL): URL {
@@ -90,6 +113,7 @@ function resolveUpstreamUrl(reqUrl: string | undefined, base: URL): URL {
 
 async function pipeStreamed(
   upstream: UpstreamResponse,
+  vendor: SelectedVendor,
   wallet: string,
   res: ServerResponse,
   deps: ProxyDeps,
@@ -103,22 +127,21 @@ async function pipeStreamed(
     res.end();
     return;
   }
-  const signed = await buildReceipt(deps, wallet, body, upstream.contentType);
-  if (signed) {
-    res.write(`event: ${RECEIPT_SSE_EVENT}\ndata: ${encodeReceipt(signed)}\n\n`);
-  }
+  const signed = await buildReceipt(deps.attestor, vendor, wallet, body, upstream.contentType);
+  if (signed) res.write(`event: ${RECEIPT_SSE_EVENT}\ndata: ${encodeReceipt(signed)}\n\n`);
   res.end();
 }
 
 async function pipeBuffered(
   upstream: UpstreamResponse,
+  vendor: SelectedVendor,
   wallet: string,
   res: ServerResponse,
   deps: ProxyDeps,
 ): Promise<void> {
   const body = await collectWithCap(upstream.body, deps.config.maxResponseBytes);
   if (!body) throw new HttpError('upstream response too large', 502);
-  const signed = await buildReceipt(deps, wallet, body, upstream.contentType);
+  const signed = await buildReceipt(deps.attestor, vendor, wallet, body, upstream.contentType);
   const headers: HeaderMap = { ...upstream.headers };
   if (signed) headers[RECEIPT_HEADER] = encodeReceipt(signed);
   res.writeHead(upstream.status, headers);
@@ -142,21 +165,22 @@ async function collectWithCap(
 }
 
 async function buildReceipt(
-  deps: ProxyDeps,
+  attestor: Attestor,
+  vendor: SelectedVendor,
   wallet: string,
   body: Buffer,
   contentType: string | undefined,
 ) {
-  const meta = extractMeta(deps.vendor.config, body, contentType);
+  const meta = extractMeta(vendor.config, body, contentType);
   if (!meta.response_id) return null;
   const receipt: Receipt = {
     wallet,
     response_id: meta.response_id,
-    upstream: deps.vendor.name,
+    upstream: vendor.name,
     model: meta.model,
     input_tokens: meta.input_tokens,
     output_tokens: meta.output_tokens,
     ts: Date.now(),
   };
-  return signReceipt(deps.attestor, receipt);
+  return signReceipt(attestor, receipt);
 }

@@ -1,6 +1,6 @@
 import { loadAttestorConfig, type AttestorConfig } from './attestor.js';
 import { loadJwtConfig, type JwtAuthConfig } from './auth-service.js';
-import { loadVendorName, type Vendor } from './vendor.js';
+import { loadDefaultVendor, type Vendor } from './vendor.js';
 
 export interface ServerConfig {
   host: string;
@@ -14,7 +14,7 @@ export interface ServerConfig {
 export interface EnclaveConfig {
   server: ServerConfig;
   attestor: AttestorConfig;
-  vendor: Vendor;
+  defaultVendor: Vendor | null;
   jwt: JwtAuthConfig | null;
 }
 
@@ -51,7 +51,7 @@ export function loadEnclaveConfig(overrides: Partial<ServerConfig> = {}): Enclav
   return {
     server: loadServerConfig(overrides),
     attestor: loadAttestorConfig(),
-    vendor: loadVendorName(),
+    defaultVendor: loadDefaultVendor(),
     jwt: loadJwtConfig(),
   };
 }

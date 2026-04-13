@@ -7,6 +7,8 @@ export interface SelectedVendor {
   config: VendorConfig;
 }
 
+export type VendorRegistry = Record<Vendor, SelectedVendor>;
+
 export interface ResponseMeta {
   response_id: string;
   model: string;
@@ -19,16 +21,44 @@ const REGISTRY: Record<Vendor, VendorConfig> = { anthropic, openai };
 const ID_RE = /"id"\s*:\s*"([^"]+)"/;
 const MODEL_RE = /"model"\s*:\s*"([^"]+)"/;
 
-export function loadVendorName(): Vendor {
-  const raw = (process.env.UPSTREAM ?? 'anthropic').toLowerCase();
-  if (!(raw in REGISTRY)) {
-    throw new Error(`UPSTREAM must be one of: ${Object.keys(REGISTRY).join(', ')}; got '${raw}'`);
-  }
-  return raw as Vendor;
+function isVendor(name: string): name is Vendor {
+  return name in REGISTRY;
 }
 
-export function selectVendor(name: Vendor): SelectedVendor {
-  return { name, config: REGISTRY[name] };
+export function loadDefaultVendor(): Vendor | null {
+  const raw = process.env.DEFAULT_UPSTREAM ?? process.env.UPSTREAM;
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (!isVendor(lower)) {
+    throw new Error(
+      `DEFAULT_UPSTREAM must be one of: ${Object.keys(REGISTRY).join(', ')}; got '${raw}'`,
+    );
+  }
+  return lower;
+}
+
+export function buildVendorRegistry(): VendorRegistry {
+  const out: Partial<VendorRegistry> = {};
+  for (const [name, config] of Object.entries(REGISTRY)) {
+    out[name as Vendor] = { name: name as Vendor, config };
+  }
+  return out as VendorRegistry;
+}
+
+export function resolveVendor(
+  registry: VendorRegistry,
+  requested: string | undefined,
+  defaultVendor: Vendor | null,
+): SelectedVendor | null {
+  if (requested) {
+    const lower = requested.toLowerCase();
+    return isVendor(lower) ? registry[lower] : null;
+  }
+  return defaultVendor ? registry[defaultVendor] : null;
+}
+
+export function vendorNames(registry: VendorRegistry): Vendor[] {
+  return Object.keys(registry) as Vendor[];
 }
 
 export function extractMeta(

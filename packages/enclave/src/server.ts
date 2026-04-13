@@ -19,7 +19,7 @@ import { writeJson } from './http.js';
 import { createProxyService } from './proxy-service.js';
 import { createInMemoryRateLimiter } from './rate-limiter.js';
 import { createUndiciUpstreamClient } from './upstream-client.js';
-import { selectVendor, type SelectedVendor } from './vendor.js';
+import { buildVendorRegistry, vendorNames, type Vendor, type VendorRegistry } from './vendor.js';
 
 const log = createLogger('enclave');
 
@@ -35,12 +35,26 @@ export async function startServer(options: StartServerOptions = {}): Promise<Ser
   validateConfig(config);
 
   const attestor = await buildAttestor(config.attestor);
-  const vendor = selectVendor(config.vendor);
+  const vendors = buildVendorRegistry();
   const auth = buildAuth(config.jwt);
-  const routes = createRoutes(attestor, vendor, buildProxy({ config, attestor, vendor, auth }));
+  const proxy = createProxyService({
+    vendors,
+    defaultVendor: config.defaultVendor,
+    upstream: createUndiciUpstreamClient(),
+    auth,
+    rateLimiter: createInMemoryRateLimiter({
+      perMinute: config.server.rateLimitPerMin,
+      ...(config.server.rateLimitWindowMs !== undefined
+        ? { windowMs: config.server.rateLimitWindowMs }
+        : {}),
+    }),
+    attestor,
+    config: config.server,
+  });
+  const routes = createRoutes(attestor, vendors, config.defaultVendor, proxy);
 
   log.info(
-    `attestor=${attestor.mode} upstream=${vendor.config.upstream} vendor=${vendor.name} jwt=${config.jwt ? 'on' : 'off'}`,
+    `attestor=${attestor.mode} vendors=${vendorNames(vendors).join(',')} default=${config.defaultVendor ?? 'none'} jwt=${config.jwt ? 'on' : 'off'}`,
   );
 
   const server = createServer((req, res) =>
@@ -73,28 +87,6 @@ function buildAttestor(cfg: AttestorConfig): Promise<Attestor> {
 
 function buildAuth(cfg: JwtAuthConfig | null): AuthService {
   return cfg ? createJwtAuthService(cfg) : createNoopAuthService();
-}
-
-function buildProxy(ctx: {
-  config: EnclaveConfig;
-  attestor: Attestor;
-  vendor: SelectedVendor;
-  auth: AuthService;
-}): ReturnType<typeof createProxyService> {
-  return createProxyService({
-    upstreamBase: new URL(ctx.vendor.config.upstream),
-    upstream: createUndiciUpstreamClient(),
-    auth: ctx.auth,
-    rateLimiter: createInMemoryRateLimiter({
-      perMinute: ctx.config.server.rateLimitPerMin,
-      ...(ctx.config.server.rateLimitWindowMs !== undefined
-        ? { windowMs: ctx.config.server.rateLimitWindowMs }
-        : {}),
-    }),
-    attestor: ctx.attestor,
-    vendor: ctx.vendor,
-    config: ctx.config.server,
-  });
 }
 
 async function dispatch(req: IncomingMessage, res: ServerResponse, routes: Routes): Promise<void> {
