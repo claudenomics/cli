@@ -46,6 +46,10 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
 }
 
 export async function run(vendorName: string, binary: string, args: string[]): Promise<number> {
+  const session = await loadSession();
+  if (!session) {
+    throw new CliError(`not signed in — run ${chalk.cyan('claudenomics login')}`);
+  }
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
   const totals: TokenUsage = { inputTokens: 0, outputTokens: 0 };
