@@ -19,7 +19,7 @@ const VENDOR_HEADER = 'x-claudenomics-vendor';
 
 interface EnclaveConfig {
   upstream: URL;
-  headers: Record<string, string>;
+  buildHeaders: () => Promise<Record<string, string>>;
 }
 
 async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | null> {
@@ -31,16 +31,18 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
       'CLAUDENOMICS_ENCLAVE_URL is set but no session — run `claudenomics login` first',
     );
   }
-  const token = await getSessionToken();
-  if (!token) {
-    throw new CliError('session has no token in keychain — run `claudenomics login` again');
-  }
   return {
     upstream: new URL(url),
-    headers: {
-      [WALLET_HEADER]: session.wallet,
-      [AUTH_HEADER]: `Bearer ${token}`,
-      [VENDOR_HEADER]: vendorName,
+    buildHeaders: async () => {
+      const token = await getSessionToken();
+      if (!token) {
+        throw new CliError('session has no token in keychain — run `claudenomics login` again');
+      }
+      return {
+        [WALLET_HEADER]: session.wallet,
+        [AUTH_HEADER]: `Bearer ${token}`,
+        [VENDOR_HEADER]: vendorName,
+      };
     },
   };
 }
@@ -75,7 +77,7 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   const proxy = await startProxy({
     upstream: enclave?.upstream ?? new URL(vendor.upstream),
     onResponse: handlers,
-    ...(enclave ? { requestHeaders: enclave.headers } : {}),
+    ...(enclave ? { requestHeaders: enclave.buildHeaders } : {}),
   });
 
   try {
