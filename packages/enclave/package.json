@@ -1,0 +1,36 @@
+{
+  "name": "@claudenomics/enclave",
+  "version": "0.1.0",
+  "description": "Attested proxy that forwards LLM API calls and signs usage receipts inside a TDX enclave.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "claudenomics-enclave": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@claudenomics/logger": "*",
+    "@claudenomics/usage": "*",
+    "@noble/secp256k1": "^2.1.0",
+    "@phala/dstack-sdk": "^0.5.7",
+    "jose": "^5.9.6",
+    "undici": "^6.19.8"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
