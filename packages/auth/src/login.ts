@@ -98,14 +98,18 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
     }
 
     const session: Session = {
-      version: 1,
+      version: 2,
       userId: exchanged.userId,
       wallet: exchanged.wallet,
       ...(exchanged.email ? { email: exchanged.email } : {}),
       createdAt: Date.now(),
       expiresAt: exchanged.expiresAt,
+      refreshExpiresAt: exchanged.refreshExpiresAt,
     };
-    await store.save(session, exchanged.token);
+    await store.save(session, {
+      accessToken: exchanged.token,
+      refreshToken: exchanged.refreshToken,
+    });
     return session;
   } finally {
     process.off('SIGINT', onSigint);
