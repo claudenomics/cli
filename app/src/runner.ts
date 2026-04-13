@@ -7,7 +7,6 @@ import type { TokenUsage } from '@claudenomics/usage';
 import { getVendor } from './vendors.js';
 import { BinaryNotFoundError, CliError } from './errors.js';
 import { createFileReceiptStore, type ReceiptStore } from './receipt-store.js';
-import { createHttpReceiptSubmitter, type ReceiptSubmitter } from './receipt-submitter.js';
 import { persistAndSubmitReceipt, retryPendingReceipts } from './receipts.js';
 
 const log = createLogger('claudenomics·runner');
@@ -46,34 +45,6 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
   };
 }
 
-function resolveReceiptsUrl(): URL | null {
-  const explicit = process.env.CLAUDENOMICS_RECEIPTS_URL;
-  if (explicit) {
-    try {
-      return new URL(explicit);
-    } catch {
-      log.warn(`invalid CLAUDENOMICS_RECEIPTS_URL: ${explicit}`);
-      return null;
-    }
-  }
-  const auth = process.env.CLAUDENOMICS_AUTH_URL;
-  if (!auth) return null;
-  try {
-    return new URL('/api/receipts', new URL(auth).origin);
-  } catch {
-    return null;
-  }
-}
-
-function buildSubmitter(): ReceiptSubmitter | null {
-  const endpoint = resolveReceiptsUrl();
-  if (!endpoint) {
-    log.debug('no receipts URL configured — receipts will be saved locally only');
-    return null;
-  }
-  return createHttpReceiptSubmitter({ endpoint, getToken: getSessionToken });
-}
-
 export async function run(vendorName: string, binary: string, args: string[]): Promise<number> {
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
@@ -81,15 +52,11 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   const enclave = await loadEnclaveConfig(vendorName);
 
   let receiptStore: ReceiptStore | null = null;
-  let submitter: ReceiptSubmitter | null = null;
   if (enclave) {
     receiptStore = createFileReceiptStore();
-    submitter = buildSubmitter();
-    if (submitter) {
-      retryPendingReceipts(receiptStore, submitter).catch((err) => {
-        log.debug('pending retry failed:', (err as Error).message);
-      });
-    }
+    retryPendingReceipts(receiptStore).catch((err) => {
+      log.debug('pending retry failed:', (err as Error).message);
+    });
   }
 
   const countTokens: ResponseHandler = (response) => {
@@ -99,7 +66,7 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   };
 
   const handlers: ResponseHandler[] = [countTokens];
-  if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore, submitter));
+  if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore));
 
   const proxy = await startProxy({
     upstream: enclave?.upstream ?? new URL(vendor.upstream),

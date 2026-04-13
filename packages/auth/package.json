@@ -19,6 +19,7 @@
     "clean": "tsc -b --clean"
   },
   "dependencies": {
+    "@claudenomics/api": "*",
     "@claudenomics/logger": "*",
     "@napi-rs/keyring": "^1.1.5",
     "jose": "^5.9.6",
