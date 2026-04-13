@@ -3,12 +3,26 @@ export interface TokenExchangeRequest {
   codeVerifier: string;
 }
 
-export interface TokenExchangeResponse {
+export interface TokenBundle {
   token: string;
   expiresAt: number;
+  refreshToken: string;
+  refreshExpiresAt: number;
   wallet: string;
   userId: string;
   email?: string;
+}
+
+export type TokenExchangeResponse = TokenBundle;
+
+export interface RefreshTokenRequest {
+  refreshToken: string;
+}
+
+export type RefreshTokenResponse = TokenBundle;
+
+export interface RevokeTokenRequest {
+  refreshToken: string;
 }
 
 export interface SignedReceipt {

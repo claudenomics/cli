@@ -1,7 +1,11 @@
 import { ApiError } from './errors.js';
 import type {
   ReceiptSubmitResponse,
+  RefreshTokenRequest,
+  RefreshTokenResponse,
+  RevokeTokenRequest,
   SignedReceipt,
+  TokenBundle,
   TokenExchangeRequest,
   TokenExchangeResponse,
   UsageResponse,
@@ -12,12 +16,15 @@ const DEFAULT_BASE_URL = 'https://api.claudenomics.xyz';
 export interface ApiClientOptions {
   baseUrl?: string | URL;
   tokenProvider?: () => Promise<string | null>;
+  onUnauthorized?: () => Promise<void>;
   fetchImpl?: typeof fetch;
 }
 
 interface Internal {
   baseUrl: URL;
   exchangeToken(req: TokenExchangeRequest): Promise<TokenExchangeResponse>;
+  refreshToken(req: RefreshTokenRequest): Promise<RefreshTokenResponse>;
+  revokeToken(req: RevokeTokenRequest): Promise<void>;
   submitReceipt(signed: SignedReceipt): Promise<ReceiptSubmitResponse>;
   getUsage(wallet: string): Promise<UsageResponse>;
 }
@@ -33,8 +40,13 @@ function getClient(): Internal {
 }
 
 export const api = {
-  exchangeToken: (req: TokenExchangeRequest): Promise<TokenExchangeResponse> => getClient().exchangeToken(req),
-  submitReceipt: (signed: SignedReceipt): Promise<ReceiptSubmitResponse> => getClient().submitReceipt(signed),
+  exchangeToken: (req: TokenExchangeRequest): Promise<TokenExchangeResponse> =>
+    getClient().exchangeToken(req),
+  refreshToken: (req: RefreshTokenRequest): Promise<RefreshTokenResponse> =>
+    getClient().refreshToken(req),
+  revokeToken: (req: RevokeTokenRequest): Promise<void> => getClient().revokeToken(req),
+  submitReceipt: (signed: SignedReceipt): Promise<ReceiptSubmitResponse> =>
+    getClient().submitReceipt(signed),
   getUsage: (wallet: string): Promise<UsageResponse> => getClient().getUsage(wallet),
 };
 
@@ -42,10 +54,33 @@ export function getApiBaseUrl(): URL {
   return getClient().baseUrl;
 }
 
+interface RawTokenBundle {
+  token: string;
+  expires_at: number;
+  refresh_token: string;
+  refresh_expires_at: number;
+  wallet: string;
+  user_id: string;
+  email?: string;
+}
+
+function fromRawBundle(raw: RawTokenBundle): TokenBundle {
+  return {
+    token: raw.token,
+    expiresAt: raw.expires_at,
+    refreshToken: raw.refresh_token,
+    refreshExpiresAt: raw.refresh_expires_at,
+    wallet: raw.wallet,
+    userId: raw.user_id,
+    ...(raw.email ? { email: raw.email } : {}),
+  };
+}
+
 function build(opts: ApiClientOptions = {}): Internal {
   const baseUrl = resolveBaseUrl(opts.baseUrl);
   const fetchImpl = opts.fetchImpl ?? fetch;
   const tokenProvider = opts.tokenProvider;
+  const onUnauthorized = opts.onUnauthorized;
 
   const requireToken = async (): Promise<string> => {
     if (!tokenProvider) throw new ApiError('no_session', 401, 'no token provider configured');
@@ -57,11 +92,13 @@ function build(opts: ApiClientOptions = {}): Internal {
   const post = async (path: string, body: unknown, bearer?: string): Promise<unknown> => {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (bearer) headers['authorization'] = `Bearer ${bearer}`;
-    return parseResponse(await safeFetch(fetchImpl, new URL(path, baseUrl), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    }));
+    return parseResponse(
+      await safeFetch(fetchImpl, new URL(path, baseUrl), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      }),
+    );
   };
 
   const get = async (path: string, bearer?: string): Promise<unknown> => {
@@ -70,45 +107,64 @@ function build(opts: ApiClientOptions = {}): Internal {
     return parseResponse(await safeFetch(fetchImpl, new URL(path, baseUrl), { headers }));
   };
 
+  const withAuthRetry = async <T>(fn: (token: string) => Promise<T>): Promise<T> => {
+    const token = await requireToken();
+    try {
+      return await fn(token);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.status !== 401 || !onUnauthorized) throw err;
+      await onUnauthorized();
+      const retried = await requireToken();
+      return await fn(retried);
+    }
+  };
+
   return {
     baseUrl,
 
     async exchangeToken(req) {
-      const raw = (await post('/api/token', { code: req.code, code_verifier: req.codeVerifier })) as {
-        token: string;
-        expires_at: number;
-        wallet: string;
-        user_id: string;
-        email?: string;
-      };
-      return {
-        token: raw.token,
-        expiresAt: raw.expires_at,
-        wallet: raw.wallet,
-        userId: raw.user_id,
-        ...(raw.email ? { email: raw.email } : {}),
-      };
+      const raw = (await post('/api/token', {
+        code: req.code,
+        code_verifier: req.codeVerifier,
+      })) as RawTokenBundle;
+      return fromRawBundle(raw);
+    },
+
+    async refreshToken(req) {
+      const raw = (await post('/api/token/refresh', {
+        refresh_token: req.refreshToken,
+      })) as RawTokenBundle;
+      return fromRawBundle(raw);
+    },
+
+    async revokeToken(req) {
+      const res = await safeFetch(fetchImpl, new URL('/api/token/revoke', baseUrl), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refresh_token: req.refreshToken }),
+      });
+      if (!res.ok && res.status !== 404) throw new ApiError('revoke_failed', res.status);
     },
 
     async submitReceipt(signed) {
-      const token = await requireToken();
-      return (await post('/api/receipts', signed, token)) as ReceiptSubmitResponse;
+      return withAuthRetry(async (token) => (await post('/api/receipts', signed, token)) as ReceiptSubmitResponse);
     },
 
     async getUsage(wallet) {
-      const token = await requireToken();
-      const raw = (await get(`/api/usage/${encodeURIComponent(wallet)}`, token)) as {
-        wallet: string;
-        input_tokens: number;
-        output_tokens: number;
-        last_updated: number;
-      };
-      return {
-        wallet: raw.wallet,
-        inputTokens: raw.input_tokens,
-        outputTokens: raw.output_tokens,
-        lastUpdated: raw.last_updated,
-      };
+      return withAuthRetry(async (token) => {
+        const raw = (await get(`/api/usage/${encodeURIComponent(wallet)}`, token)) as {
+          wallet: string;
+          input_tokens: number;
+          output_tokens: number;
+          last_updated: number;
+        };
+        return {
+          wallet: raw.wallet,
+          inputTokens: raw.input_tokens,
+          outputTokens: raw.output_tokens,
+          lastUpdated: raw.last_updated,
+        };
+      });
     },
   };
 }
