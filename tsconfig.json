@@ -6,6 +6,7 @@
     { "path": "packages/proxy" },
     { "path": "packages/auth" },
     { "path": "packages/enclave" },
+    { "path": "packages/api" },
     { "path": "app" }
   ]
 }
