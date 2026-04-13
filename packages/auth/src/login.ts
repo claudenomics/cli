@@ -61,8 +61,8 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
   const store = opts.sessionStore ?? createXdgSessionStore();
   const target = parseAuthUrl(resolveAuthUrl(opts));
   const tokenUrl = resolveTokenUrl(opts, target);
-  const override = opts.authUrl || process.env.CLAUDENOMICS_AUTH_URL !== undefined;
-  if (opts.authUrl) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
+  const override = opts.authUrl !== undefined;
+  if (override) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
 
   const state = randomBytes(32).toString('hex');
   const pkce = createPkcePair();
