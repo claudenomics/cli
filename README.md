@@ -44,14 +44,17 @@ Arguments after `claude` / `codex` are passed through unchanged.
 
 ## Configuration
 
+All URLs default to production. Override any of them to point at a local stack.
+
 | variable | default |
 | --- | --- |
-| `CLAUDENOMICS_AUTH_URL` | — |
-| `CLAUDENOMICS_JWKS_URL` | — |
-| `CLAUDENOMICS_JWT_ISSUER` | — |
-| `CLAUDENOMICS_ENCLAVE_URL` | — |
+| `CLAUDENOMICS_AUTH_URL` | `https://auth.claudenomics.xyz` |
+| `CLAUDENOMICS_JWKS_URL` | `https://auth.claudenomics.xyz/.well-known/jwks.json` |
+| `CLAUDENOMICS_JWT_ISSUER` | `https://auth.claudenomics.xyz` |
+| `CLAUDENOMICS_ENCLAVE_URL` | Phala TDX enclave |
 | `CLAUDENOMICS_API_URL` | `https://api.claudenomics.xyz` |
 | `CLAUDENOMICS_LOG` | `info` |
+| `CLAUDENOMICS_SKIP_UPDATE_CHECK` | `0` |
 
 ## Links
 
