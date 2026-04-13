@@ -25,6 +25,8 @@
   "dependencies": {
     "@claudenomics/logger": "*",
     "@claudenomics/usage": "*",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.6.1",
     "@noble/secp256k1": "^2.1.0",
     "@phala/dstack-sdk": "^0.5.7",
     "jose": "^5.9.6",
