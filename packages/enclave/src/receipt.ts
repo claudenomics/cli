@@ -20,6 +20,7 @@ export interface SignedReceipt {
   sig: string;
   pubkey: string;
   compose_hash: string;
+  mode: string;
 }
 
 function requireSafeInt(name: string, n: number): number {
@@ -43,7 +44,7 @@ function pushUint64(parts: Buffer[], n: number): void {
   parts.push(b);
 }
 
-export function canonicalize(r: Receipt): Buffer {
+export function canonicalize(r: Receipt, composeHash: string, mode: string): Buffer {
   const input = requireSafeInt('input_tokens', r.input_tokens);
   const output = requireSafeInt('output_tokens', r.output_tokens);
   const ts = requireSafeInt('ts', r.ts);
@@ -56,6 +57,8 @@ export function canonicalize(r: Receipt): Buffer {
   pushUint64(parts, input);
   pushUint64(parts, output);
   pushUint64(parts, ts);
+  pushString(parts, composeHash);
+  pushString(parts, mode);
   return Buffer.concat(parts);
 }
 
@@ -63,13 +66,16 @@ export async function signReceipt(
   attestor: Attestor,
   receipt: Receipt,
 ): Promise<SignedReceipt> {
-  const digest = createHash('sha256').update(canonicalize(receipt)).digest();
+  const composeHash = attestor.composeHash();
+  const mode = attestor.mode;
+  const digest = createHash('sha256').update(canonicalize(receipt, composeHash, mode)).digest();
   const sig = await signAsync(digest, attestor.privateKey);
   return {
     receipt,
     sig: Buffer.from(sig.toCompactRawBytes()).toString('hex'),
     pubkey: Buffer.from(attestor.publicKey).toString('hex'),
-    compose_hash: attestor.composeHash(),
+    compose_hash: composeHash,
+    mode,
   };
 }
 
