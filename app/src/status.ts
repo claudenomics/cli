@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { getApiBaseUrl } from '@claudenomics/api';
-import { getSessionToken, loadSession, type Session } from '@claudenomics/auth';
+import { loadSession, type Session } from '@claudenomics/auth';
 import { formatIdentity } from './format.js';
 import { createFileReceiptStore } from './receipt-store.js';
 
@@ -71,15 +71,12 @@ function sessionLine(session: Session | null): CheckResult {
 }
 
 function sessionExpiryLine(session: Session | null): CheckResult | null {
-  if (!session || session.expiresAt === undefined) return null;
-  const remaining = session.expiresAt - Date.now();
-  if (remaining > 0) return ok(`Session valid (expires in ${formatDuration(remaining)})`);
-  return fail(`Session expired — run ${chalk.cyan('claudenomics login')}`);
-}
-
-function tokenLine(sessionPresent: boolean, tokenPresent: boolean): CheckResult | null {
-  if (!sessionPresent) return null;
-  return tokenPresent ? null : fail('Session token missing from keychain');
+  if (!session) return null;
+  const access = session.expiresAt - Date.now();
+  const refresh = session.refreshExpiresAt - Date.now();
+  if (refresh <= 0) return fail(`Session expired — run ${chalk.cyan('claudenomics login')}`);
+  const accessDetail = access > 0 ? formatDuration(access) : 'expired (auto-refresh on next call)';
+  return ok(`Access ${accessDetail} · refresh window ${formatDuration(refresh)}`);
 }
 
 function enclaveLine(probe: ProbeResult | null): CheckResult {
@@ -96,7 +93,6 @@ function apiLine(probe: ProbeResult): CheckResult {
 
 export async function runStatus(): Promise<void> {
   const session = await loadSession();
-  const token = session ? await getSessionToken() : null;
 
   const enclaveUrl = process.env.CLAUDENOMICS_ENCLAVE_URL;
 
@@ -117,7 +113,6 @@ export async function runStatus(): Promise<void> {
   const lines: CheckResult[] = [
     sessionLine(session),
     sessionExpiryLine(session),
-    tokenLine(session !== null, token !== null),
     enclaveLine(enclaveProbe),
     apiLine(apiProbe),
   ].filter((x): x is CheckResult => x !== null);

@@ -1,7 +1,14 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { configureApi } from '@claudenomics/api';
-import { AuthError, clearSession, getSessionToken, loadSession, login } from '@claudenomics/auth';
+import {
+  AuthError,
+  forceRefresh,
+  getSessionToken,
+  loadSession,
+  login,
+  logout,
+} from '@claudenomics/auth';
 import { createLogger, setLevel } from '@claudenomics/logger';
 import { BUILTIN_COMMANDS, passthroughCommand } from './commands.js';
 import { applyEmbeddedDefaults } from './defaults.js';
@@ -11,7 +18,10 @@ import { runStatus } from './status.js';
 import { runUsage } from './usage.js';
 
 applyEmbeddedDefaults();
-configureApi({ tokenProvider: getSessionToken });
+configureApi({
+  tokenProvider: getSessionToken,
+  onUnauthorized: forceRefresh,
+});
 
 const log = createLogger('claudenomics');
 
@@ -38,9 +48,9 @@ program
 
 program
   .command('logout')
-  .description('Clear the local session.')
+  .description('Revoke the session on the server and clear local state.')
   .action(async () => {
-    const cleared = await clearSession();
+    const cleared = await logout();
     process.stdout.write(cleared ? `${chalk.green('✓')} logged out\n` : 'already logged out\n');
   });
 
