@@ -15,3 +15,6 @@ yarn-error.log*
 .pnp.js
 
 .vscode/*
+
+app/README.md
+app/LICENSE
