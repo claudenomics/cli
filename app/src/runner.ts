@@ -16,13 +16,14 @@ const SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
 
 const WALLET_HEADER = 'x-claudenomics-wallet';
 const AUTH_HEADER = 'x-claudenomics-auth';
+const VENDOR_HEADER = 'x-claudenomics-vendor';
 
 interface EnclaveConfig {
   upstream: URL;
   headers: Record<string, string>;
 }
 
-async function loadEnclaveConfig(): Promise<EnclaveConfig | null> {
+async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | null> {
   const url = process.env.CLAUDENOMICS_ENCLAVE_URL;
   if (!url) return null;
   const session = await loadSession();
@@ -40,6 +41,7 @@ async function loadEnclaveConfig(): Promise<EnclaveConfig | null> {
     headers: {
       [WALLET_HEADER]: session.wallet,
       [AUTH_HEADER]: `Bearer ${token}`,
+      [VENDOR_HEADER]: vendorName,
     },
   };
 }
@@ -76,7 +78,7 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
   const totals: TokenUsage = { inputTokens: 0, outputTokens: 0 };
-  const enclave = await loadEnclaveConfig();
+  const enclave = await loadEnclaveConfig(vendorName);
 
   let receiptStore: ReceiptStore | null = null;
   let submitter: ReceiptSubmitter | null = null;
