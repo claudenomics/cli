@@ -7,5 +7,7 @@ services:
     environment:
       DEFAULT_UPSTREAM: anthropic
       DSTACK_MODE: production
+      CLAUDENOMICS_JWKS_URL: https://auth.claudenomics.xyz/.well-known/jwks.json
+      CLAUDENOMICS_JWT_ISSUER: https://auth.claudenomics.xyz
       PORT: "8787"
       CLAUDENOMICS_LOG: info

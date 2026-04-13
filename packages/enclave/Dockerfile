@@ -17,7 +17,5 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /repo/node_modules /app/node_modules
 COPY --from=build /repo/packages /app/packages
-RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
-USER app
 EXPOSE 8787
 CMD ["node", "packages/enclave/dist/index.js"]
