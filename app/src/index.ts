@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { AuthError, clearSession, loadSession, login } from '@claudenomics/auth';
+import { configureApi } from '@claudenomics/api';
+import { AuthError, clearSession, getSessionToken, loadSession, login } from '@claudenomics/auth';
 import { createLogger, setLevel } from '@claudenomics/logger';
 import { BUILTIN_COMMANDS, passthroughCommand } from './commands.js';
 import { CliError } from './errors.js';
 import { formatIdentity } from './format.js';
+import { runStatus } from './status.js';
+import { runUsage } from './usage.js';
+
+configureApi({ tokenProvider: getSessionToken });
 
 const log = createLogger('claudenomics');
 
@@ -36,6 +41,20 @@ program
   .action(async () => {
     const cleared = await clearSession();
     process.stdout.write(cleared ? `${chalk.green('✓')} logged out\n` : 'already logged out\n');
+  });
+
+program
+  .command('usage')
+  .description('Show your accumulated token usage from the backend.')
+  .action(async () => {
+    await runUsage();
+  });
+
+program
+  .command('status')
+  .description('Check session, enclave, backend reachability, and pending receipts.')
+  .action(async () => {
+    await runStatus();
   });
 
 for (const spec of BUILTIN_COMMANDS) program.addCommand(passthroughCommand(spec));

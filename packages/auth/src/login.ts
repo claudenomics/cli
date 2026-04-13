@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { api, ApiError } from '@claudenomics/api';
 import { createLogger } from '@claudenomics/logger';
 import { openBrowser } from './browser.js';
 import { AuthError } from './errors.js';
@@ -6,7 +7,6 @@ import { verifyJwt } from './jwt.js';
 import { listen } from './loopback.js';
 import { createPkcePair } from './pkce.js';
 import { createXdgSessionStore, type SessionStore, type Session } from './session-store.js';
-import { exchangeCode } from './token-exchange.js';
 
 const log = createLogger('claudenomics');
 
@@ -14,7 +14,6 @@ const TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface LoginOptions {
   authUrl?: string;
-  tokenUrl?: string;
   sessionStore?: SessionStore;
 }
 
@@ -43,24 +42,9 @@ function resolveAuthUrl(opts: LoginOptions): string {
   );
 }
 
-function defaultTokenUrl(authUrl: URL): URL {
-  return new URL('/api/token', authUrl.origin);
-}
-
-function resolveTokenUrl(opts: LoginOptions, authUrl: URL): URL {
-  const raw = opts.tokenUrl ?? process.env.CLAUDENOMICS_TOKEN_URL;
-  if (!raw) return defaultTokenUrl(authUrl);
-  try {
-    return new URL(raw);
-  } catch {
-    throw new AuthError(`invalid token URL: ${raw}`);
-  }
-}
-
 export async function login(opts: LoginOptions = {}): Promise<Session> {
   const store = opts.sessionStore ?? createXdgSessionStore();
   const target = parseAuthUrl(resolveAuthUrl(opts));
-  const tokenUrl = resolveTokenUrl(opts, target);
   const override = opts.authUrl !== undefined;
   if (override) log.warn(`using overridden auth URL ${target.origin} (dev mode)`);
 
@@ -90,7 +74,13 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
       }),
     ]);
 
-    const exchanged = await exchangeCode(tokenUrl, cb.code, pkce.verifier);
+    let exchanged;
+    try {
+      exchanged = await api.exchangeToken({ code: cb.code, codeVerifier: pkce.verifier });
+    } catch (err) {
+      if (err instanceof ApiError) throw new AuthError(`token exchange failed: ${err.code}`);
+      throw new AuthError(`token endpoint unreachable: ${(err as Error).message}`);
+    }
 
     const jwtCfg = loadJwtConfig();
     if (jwtCfg) {
@@ -109,11 +99,11 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
 
     const session: Session = {
       version: 1,
-      userId: exchanged.user_id,
+      userId: exchanged.userId,
       wallet: exchanged.wallet,
       ...(exchanged.email ? { email: exchanged.email } : {}),
       createdAt: Date.now(),
-      expiresAt: exchanged.expires_at,
+      expiresAt: exchanged.expiresAt,
     };
     await store.save(session, exchanged.token);
     return session;

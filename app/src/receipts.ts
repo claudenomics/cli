@@ -1,7 +1,7 @@
+import { api, ApiError, type SignedReceipt } from '@claudenomics/api';
 import { createLogger } from '@claudenomics/logger';
 import type { ProxiedResponse, ResponseHandler } from '@claudenomics/proxy';
-import type { ReceiptStore, SignedReceiptLike } from './receipt-store.js';
-import type { ReceiptSubmitter } from './receipt-submitter.js';
+import type { ReceiptStore } from './receipt-store.js';
 
 const log = createLogger('claudenomics·receipts');
 
@@ -30,34 +30,31 @@ function readReceiptFromSseStream(body: Buffer): string | null {
   return null;
 }
 
-function decodeReceipt(b64: string): SignedReceiptLike | null {
+function decodeReceipt(b64: string): SignedReceipt | null {
   try {
-    return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) as SignedReceiptLike;
+    return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) as SignedReceipt;
   } catch {
     return null;
   }
 }
 
-async function trySubmit(
-  signed: SignedReceiptLike,
-  store: ReceiptStore,
-  submitter: ReceiptSubmitter | null,
-): Promise<void> {
+async function trySubmit(signed: SignedReceipt, store: ReceiptStore): Promise<void> {
   const id = signed.receipt.response_id;
-  if (!id || !submitter) return;
-  const result = await submitter.submit(signed);
-  if (result.ok) {
+  if (!id) return;
+  try {
+    await api.submitReceipt(signed);
     await store.markSubmitted(id);
     log.debug('submitted receipt', id);
-  } else {
-    log.warn(`submit failed (${result.status ?? '?'}): ${result.reason ?? 'unknown'} — kept in pending/`);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      log.warn(`submit failed (${err.status}): ${err.code} — kept in pending/`);
+    } else {
+      log.warn(`submit failed: ${(err as Error).message} — kept in pending/`);
+    }
   }
 }
 
-export function persistAndSubmitReceipt(
-  store: ReceiptStore,
-  submitter: ReceiptSubmitter | null,
-): ResponseHandler {
+export function persistAndSubmitReceipt(store: ReceiptStore): ResponseHandler {
   return async (response: ProxiedResponse): Promise<void> => {
     let encoded: string | null = readReceiptHeader(response.responseHeaders);
     if (!encoded && response.contentType?.includes('text/event-stream')) {
@@ -70,18 +67,15 @@ export function persistAndSubmitReceipt(
       return;
     }
     await store.save(signed);
-    await trySubmit(signed, store, submitter);
+    await trySubmit(signed, store);
   };
 }
 
-export async function retryPendingReceipts(
-  store: ReceiptStore,
-  submitter: ReceiptSubmitter,
-): Promise<void> {
+export async function retryPendingReceipts(store: ReceiptStore): Promise<void> {
   const pending = await store.listPending();
   if (pending.length === 0) return;
   log.debug(`retrying ${pending.length} pending receipt(s)`);
   for (const { signed } of pending) {
-    await trySubmit(signed, store, submitter);
+    await trySubmit(signed as SignedReceipt, store);
   }
 }
