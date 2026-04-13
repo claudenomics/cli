@@ -67,3 +67,29 @@ jobs:
           subject-name: ghcr.io/claudenomics/enclave
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+  deploy-phala:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.deploy != 'false'
+    concurrency:
+      group: phala-deploy
+      cancel-in-progress: false
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+      - run: npm install -g phala
+      - name: Redeploy CVM with current compose
+        env:
+          PHALA_CLOUD_API_KEY: ${{ secrets.PHALA_CLOUD_API_KEY }}
+        run: |
+          phala deploy \
+            --cvm-id "${{ vars.PHALA_CVM_ID }}" \
+            -c docker-compose.yaml \
+            --wait
+      - name: Smoke /health
+        run: |
+          curl -sS --max-time 30 "${{ vars.PHALA_ENCLAVE_URL }}/health" | tee /dev/stderr | grep -q '"ok":true'
