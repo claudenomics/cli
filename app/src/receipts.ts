@@ -1,6 +1,7 @@
 import { createLogger } from '@claudenomics/logger';
 import type { ProxiedResponse, ResponseHandler } from '@claudenomics/proxy';
 import type { ReceiptStore, SignedReceiptLike } from './receipt-store.js';
+import type { ReceiptSubmitter } from './receipt-submitter.js';
 
 const log = createLogger('claudenomics·receipts');
 
@@ -37,7 +38,26 @@ function decodeReceipt(b64: string): SignedReceiptLike | null {
   }
 }
 
-export function extractAndStoreReceipt(store: ReceiptStore): ResponseHandler {
+async function trySubmit(
+  signed: SignedReceiptLike,
+  store: ReceiptStore,
+  submitter: ReceiptSubmitter | null,
+): Promise<void> {
+  const id = signed.receipt.response_id;
+  if (!id || !submitter) return;
+  const result = await submitter.submit(signed);
+  if (result.ok) {
+    await store.markSubmitted(id);
+    log.debug('submitted receipt', id);
+  } else {
+    log.warn(`submit failed (${result.status ?? '?'}): ${result.reason ?? 'unknown'} — kept in pending/`);
+  }
+}
+
+export function persistAndSubmitReceipt(
+  store: ReceiptStore,
+  submitter: ReceiptSubmitter | null,
+): ResponseHandler {
   return async (response: ProxiedResponse): Promise<void> => {
     let encoded: string | null = readReceiptHeader(response.responseHeaders);
     if (!encoded && response.contentType?.includes('text/event-stream')) {
@@ -49,7 +69,19 @@ export function extractAndStoreReceipt(store: ReceiptStore): ResponseHandler {
       log.warn('failed to decode receipt');
       return;
     }
-    const savedPath = await store.save(signed);
-    if (savedPath) log.debug('saved receipt', savedPath);
+    await store.save(signed);
+    await trySubmit(signed, store, submitter);
   };
+}
+
+export async function retryPendingReceipts(
+  store: ReceiptStore,
+  submitter: ReceiptSubmitter,
+): Promise<void> {
+  const pending = await store.listPending();
+  if (pending.length === 0) return;
+  log.debug(`retrying ${pending.length} pending receipt(s)`);
+  for (const { signed } of pending) {
+    await trySubmit(signed, store, submitter);
+  }
 }
