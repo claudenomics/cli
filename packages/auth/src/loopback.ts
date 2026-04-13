@@ -4,10 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { AuthError } from './errors.js';
 
 export interface Callback {
-  token: string;
-  userId: string;
-  wallet: string;
-  email?: string;
+  code: string;
+  state: string;
 }
 
 const HEADERS = {
@@ -28,11 +26,9 @@ function parseCallback(q: URLSearchParams, expectedState: string): Callback | st
   if (!state || !safeEqual(state, expectedState)) return 'state mismatch';
   const error = q.get('error');
   if (error) return error;
-  const token = q.get('token');
-  const userId = q.get('userId');
-  const wallet = q.get('wallet');
-  if (!token || !userId || !wallet) return 'missing token, userId or wallet';
-  return { token, userId, wallet, email: q.get('email') ?? undefined };
+  const code = q.get('code');
+  if (!code) return 'missing code';
+  return { code, state };
 }
 
 export async function listen(expectedState: string) {
