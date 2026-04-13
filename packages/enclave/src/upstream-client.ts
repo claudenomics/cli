@@ -29,7 +29,11 @@ async function* asBufferStream(body: AsyncIterable<unknown>): AsyncIterable<Buff
 export function createUndiciUpstreamClient(): UpstreamClient {
   return {
     async forward(req: UpstreamRequest): Promise<UpstreamResponse> {
-      const outboundHeaders = filterHeaders(req.headers, { host: req.url.host }, req.stripHeaders);
+      const outboundHeaders = filterHeaders(
+        req.headers,
+        { host: req.url.host, 'accept-encoding': 'identity' },
+        req.stripHeaders,
+      );
       const res = await undiciRequest(req.url, {
         method: req.method as Dispatcher.HttpMethod,
         headers: outboundHeaders,
