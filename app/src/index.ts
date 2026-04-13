@@ -4,11 +4,13 @@ import { configureApi } from '@claudenomics/api';
 import { AuthError, clearSession, getSessionToken, loadSession, login } from '@claudenomics/auth';
 import { createLogger, setLevel } from '@claudenomics/logger';
 import { BUILTIN_COMMANDS, passthroughCommand } from './commands.js';
+import { applyEmbeddedDefaults } from './defaults.js';
 import { CliError } from './errors.js';
 import { formatIdentity } from './format.js';
 import { runStatus } from './status.js';
 import { runUsage } from './usage.js';
 
+applyEmbeddedDefaults();
 configureApi({ tokenProvider: getSessionToken });
 
 const log = createLogger('claudenomics');
