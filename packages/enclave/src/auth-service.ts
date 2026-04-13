@@ -27,8 +27,13 @@ export function loadJwtConfig(): JwtAuthConfig | null {
   return cfg;
 }
 
+export interface AuthenticatedIdentity {
+  sub: string;
+  payload: JWTPayload;
+}
+
 export interface AuthService {
-  authenticate(authHeader: string | undefined, walletHeader: string): Promise<JWTPayload>;
+  authenticate(authHeader: string | undefined, walletHeader: string): Promise<AuthenticatedIdentity>;
 }
 
 export function createJwtAuthService(cfg: JwtAuthConfig): AuthService {
@@ -45,7 +50,7 @@ export function createJwtAuthService(cfg: JwtAuthConfig): AuthService {
           issuer: cfg.issuer,
           ...(cfg.audience !== undefined ? { audience: cfg.audience } : {}),
           algorithms: [...ALLOWED_ALGS],
-          requiredClaims: ['exp'],
+          requiredClaims: ['exp', 'sub'],
           clockTolerance: 30,
         });
         payload = result.payload;
@@ -60,15 +65,10 @@ export function createJwtAuthService(cfg: JwtAuthConfig): AuthService {
       if (claimed !== walletHeader) {
         throw new AuthError('wallet header does not match jwt claim', 403);
       }
-      return payload;
-    },
-  };
-}
-
-export function createNoopAuthService(): AuthService {
-  return {
-    async authenticate() {
-      return {} as JWTPayload;
+      if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
+        throw new AuthError('jwt missing sub claim', 403);
+      }
+      return { sub: payload.sub, payload };
     },
   };
 }

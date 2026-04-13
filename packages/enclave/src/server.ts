@@ -8,11 +8,10 @@ import {
 } from './attestor.js';
 import {
   createJwtAuthService,
-  createNoopAuthService,
   type AuthService,
   type JwtAuthConfig,
 } from './auth-service.js';
-import { loadEnclaveConfig, type EnclaveConfig, type ServerConfig } from './config.js';
+import { loadEnclaveConfig, type ServerConfig } from './config.js';
 import { createRoutes, type Routes } from './endpoints.js';
 import { AuthError, HttpError } from './errors.js';
 import { writeJson } from './http.js';
@@ -32,7 +31,9 @@ export interface ServerHandle {
 
 export async function startServer(options: StartServerOptions = {}): Promise<ServerHandle> {
   const config = loadEnclaveConfig(options);
-  validateConfig(config);
+  if (!config.jwt) {
+    throw new Error('JWT auth required — set CLAUDENOMICS_JWKS_URL and CLAUDENOMICS_JWT_ISSUER');
+  }
 
   const attestor = await buildAttestor(config.attestor);
   const vendors = buildVendorRegistry();
@@ -74,19 +75,12 @@ export async function startServer(options: StartServerOptions = {}): Promise<Ser
   };
 }
 
-function validateConfig(cfg: EnclaveConfig): void {
-  if (cfg.attestor.mode === 'production' && !cfg.jwt) {
-    throw new Error('production mode requires CLAUDENOMICS_JWKS_URL and CLAUDENOMICS_JWT_ISSUER');
-  }
-  if (!cfg.jwt) log.warn('JWT auth disabled (simulator mode) — receipts are not wallet-authenticated');
-}
-
 function buildAttestor(cfg: AttestorConfig): Promise<Attestor> {
   return cfg.mode === 'production' ? createDstackAttestor() : Promise.resolve(createSimulatorAttestor(cfg.seed));
 }
 
-function buildAuth(cfg: JwtAuthConfig | null): AuthService {
-  return cfg ? createJwtAuthService(cfg) : createNoopAuthService();
+function buildAuth(cfg: JwtAuthConfig): AuthService {
+  return createJwtAuthService(cfg);
 }
 
 async function dispatch(req: IncomingMessage, res: ServerResponse, routes: Routes): Promise<void> {

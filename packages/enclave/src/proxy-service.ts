@@ -48,8 +48,11 @@ export function createProxyService(deps: ProxyDeps): ProxyService {
   return {
     async handle(req, res) {
       const wallet = requireWallet(req);
-      await deps.auth.authenticate(readSingleHeader(req.headers, CLAUDENOMICS_AUTH_HEADER), wallet);
-      if (!deps.rateLimiter.check(wallet)) {
+      const identity = await deps.auth.authenticate(
+        readSingleHeader(req.headers, CLAUDENOMICS_AUTH_HEADER),
+        wallet,
+      );
+      if (!deps.rateLimiter.check(identity.sub)) {
         return writeJson(res, 429, { error: 'rate limit exceeded' });
       }
 
