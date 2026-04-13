@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { run } from './runner.js';
+import { runUpdateCheck } from './update-check.js';
 
 export interface PassthroughSpec {
   name: string;
@@ -16,6 +17,7 @@ export function passthroughCommand(spec: PassthroughSpec): Command {
     .helpOption(false)
     .argument('[args...]')
     .action(async (args: string[] | undefined) => {
+      await runUpdateCheck();
       process.exit(await run(spec.vendor, spec.binary, args ?? []));
     });
 }
