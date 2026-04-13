@@ -1,29 +1,61 @@
 {
-  "name": "claudenomics-cli",
+  "name": "@claudenomics/cli",
   "version": "0.1.0",
-  "description": "Transparent wrapper around claude-code and codex with token accounting.",
+  "description": "Transparent wrapper around claude and codex with attested, wallet-bound token metering.",
   "type": "module",
   "bin": {
     "claudenomics": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "clean": "tsc -b --clean"
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "cp ../README.md ../LICENSE ."
   },
   "dependencies": {
+    "@napi-rs/keyring": "^1.1.5",
+    "undici": "^6.19.8"
+  },
+  "devDependencies": {
     "@claudenomics/api": "*",
     "@claudenomics/auth": "*",
     "@claudenomics/logger": "*",
     "@claudenomics/proxy": "*",
     "@claudenomics/usage": "*",
     "chalk": "^5.3.0",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "tsup": "^8.5.1"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "keywords": [
+    "claude",
+    "codex",
+    "llm",
+    "tokens",
+    "metering",
+    "tee",
+    "attestation",
+    "solana"
+  ],
+  "homepage": "https://claudenomics.xyz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/claudenomics/claudenomics-cli.git",
+    "directory": "app"
+  },
+  "bugs": {
+    "url": "https://github.com/claudenomics/claudenomics-cli/issues"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

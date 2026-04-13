@@ -9,7 +9,7 @@
     "app"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && npm run build --workspace=@claudenomics/cli",
     "dev": "tsc -b --watch",
     "typecheck": "tsc -b --noEmit",
     "test": "npm -ws --if-present run test",
