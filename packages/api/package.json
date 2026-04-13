@@ -16,6 +16,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
+    "test": "vitest run",
     "clean": "tsc -b --clean"
   },
   "engines": {
