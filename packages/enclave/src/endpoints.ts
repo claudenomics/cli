@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Attestor } from './attestor.js';
 import { writeJson } from './http.js';
 import type { ProxyService } from './proxy-service.js';
-import type { SelectedVendor } from './vendor.js';
+import { vendorNames, type Vendor, type VendorRegistry } from './vendor.js';
 
 export interface Routes {
   health(res: ServerResponse): void;
@@ -12,12 +12,18 @@ export interface Routes {
 
 export function createRoutes(
   attestor: Attestor,
-  vendor: SelectedVendor,
+  vendors: VendorRegistry,
+  defaultVendor: Vendor | null,
   proxy: ProxyService,
 ): Routes {
   return {
     health(res) {
-      writeJson(res, 200, { ok: true, mode: attestor.mode, vendor: vendor.name });
+      writeJson(res, 200, {
+        ok: true,
+        mode: attestor.mode,
+        vendors: vendorNames(vendors),
+        default_vendor: defaultVendor,
+      });
     },
     async attestation(res) {
       const quote = await attestor.quote();
