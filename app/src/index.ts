@@ -49,6 +49,8 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     log.error(err.message);
     process.exit(1);
   }
-  log.error('unexpected error:', (err as Error).stack ?? String(err));
+  const e = err as Error;
+  const debug = process.env.CLAUDENOMICS_LOG === 'debug';
+  log.error('unexpected error:', debug ? (e.stack ?? String(e)) : e.message);
   process.exit(1);
 });
