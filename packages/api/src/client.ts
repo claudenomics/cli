@@ -1,5 +1,6 @@
 import { ApiError } from './errors.js';
 import type {
+  ProfileResponse,
   ReceiptSubmitResponse,
   RefreshTokenRequest,
   RefreshTokenResponse,
@@ -27,6 +28,7 @@ interface Internal {
   revokeToken(req: RevokeTokenRequest): Promise<void>;
   submitReceipt(signed: SignedReceipt): Promise<ReceiptSubmitResponse>;
   getUsage(wallet: string): Promise<UsageResponse>;
+  getProfile(wallet: string): Promise<ProfileResponse>;
 }
 
 let client: Internal | null = null;
@@ -48,6 +50,7 @@ export const api = {
   submitReceipt: (signed: SignedReceipt): Promise<ReceiptSubmitResponse> =>
     getClient().submitReceipt(signed),
   getUsage: (wallet: string): Promise<UsageResponse> => getClient().getUsage(wallet),
+  getProfile: (wallet: string): Promise<ProfileResponse> => getClient().getProfile(wallet),
 };
 
 export function getApiBaseUrl(): URL {
@@ -164,6 +167,20 @@ function build(opts: ApiClientOptions = {}): Internal {
           outputTokens: raw.output_tokens,
           lastUpdated: raw.last_updated,
         };
+      });
+    },
+
+    async getProfile(wallet) {
+      return withAuthRetry(async (token) => {
+        const raw = (await get(`/api/profile/${encodeURIComponent(wallet)}`, token)) as {
+          wallet: string;
+          league?: string;
+          rank?: number;
+        };
+        const out: ProfileResponse = { wallet: raw.wallet };
+        if (typeof raw.league === 'string') out.league = raw.league;
+        if (typeof raw.rank === 'number') out.rank = raw.rank;
+        return out;
       });
     },
   };
