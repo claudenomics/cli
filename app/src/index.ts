@@ -1,85 +1,106 @@
-import { Command } from 'commander';
 import chalk from 'chalk';
+import { Command as ProgramCommand } from 'commander';
 import { configureApi } from '@claudenomics/api';
 import {
   AuthError,
   forceRefresh,
   getSessionToken,
   loadSession,
-  login,
-  logout,
 } from '@claudenomics/auth';
 import { createLogger, setLevel } from '@claudenomics/logger';
 import { BUILTIN_COMMANDS, passthroughCommand } from './commands.js';
-import { applyEmbeddedDefaults } from './defaults.js';
+import { applyConfigToEnv, resolveConfig } from './config.js';
 import { CliError } from './errors.js';
 import { formatIdentity } from './format.js';
+import { printHome } from './home.js';
+import { runLogin } from './login-ui.js';
+import { runLogout } from './logout-ui.js';
+import { runWhoami } from './whoami-ui.js';
 import { runStatus } from './status.js';
+import { styles } from './styles.js';
+import { text } from './text.js';
 import { runUpdate } from './update-check.js';
 import { runUsage } from './usage.js';
 
-applyEmbeddedDefaults();
+const config = resolveConfig();
+applyConfigToEnv(config);
+if (config.logLevel) setLevel(config.logLevel);
 configureApi({
   tokenProvider: getSessionToken,
   onUnauthorized: forceRefresh,
 });
 
+{
+  const args = process.argv.slice(2);
+  const subCommand = args.find((a) => !a.startsWith('-'));
+  const wantsHelp = args.includes('--help') || args.includes('-h');
+  const wantsVersion = args.includes('--version') || args.includes('-v');
+  if (!subCommand && !wantsHelp && !wantsVersion) {
+    if (args.includes('--no-color')) chalk.level = 0;
+    if (args.includes('--verbose')) setLevel('debug');
+    await printHome();
+    process.exit(0);
+  }
+}
+
 const log = createLogger('claudenomics');
 
 declare const __CLAUDENOMICS_VERSION__: string;
 
-const program = new Command('claudenomics')
-  .description('Transparent wrapper around claude-code and codex with token accounting.')
-  .version(__CLAUDENOMICS_VERSION__, '-v, --version', 'show installed version')
-  .option('--verbose', 'enable debug logging', () => setLevel('debug'));
+const program = new ProgramCommand('claudenomics')
+  .description(text.help.program)
+  .version(__CLAUDENOMICS_VERSION__, '-v, --version', text.help.version)
+  .option('--verbose', text.help.verbose, () => setLevel('debug'))
+  .option('--no-color', text.help.noColor);
+
+program.hook('preAction', () => {
+  if (program.opts().color === false) chalk.level = 0;
+});
 
 program
   .command('login')
-  .description('Sign in and create (or attach) your Solana wallet via Privy.')
-  .option('--auth-url <url>', 'override the default auth URL (dev only)')
+  .description(text.help.login.summary)
+  .option('--auth-url <url>', text.help.login.authUrlFlag)
   .action(async (opts: { authUrl?: string }) => {
-    const s = await login({ authUrl: opts.authUrl });
-    process.stdout.write(`${chalk.green('✓')} ${formatIdentity(s)}\n`);
+    await runLogin(opts);
   });
 
 program
   .command('whoami')
-  .description('Show your email, wallet, and session status.')
+  .description(text.help.whoami)
   .action(async () => {
-    const s = await loadSession();
-    process.stdout.write(s ? `${formatIdentity(s)}\n` : `not signed in — run ${chalk.cyan('claudenomics login')}\n`);
+    await runWhoami();
   });
 
 program
   .command('logout')
-  .description('Revoke the session on the server and clear local state.')
+  .description(text.help.logout)
   .action(async () => {
-    const cleared = await logout();
-    process.stdout.write(cleared ? `${chalk.green('✓')} logged out\n` : 'already logged out\n');
+    await runLogout();
   });
 
 program
   .command('usage')
-  .description('Show your accumulated token usage from the backend.')
+  .description(text.help.usage)
   .action(async () => {
     await runUsage();
   });
 
 program
   .command('status')
-  .description('Check session, enclave, backend reachability, and pending receipts.')
+  .description(text.help.status)
   .action(async () => {
     await runStatus();
   });
 
 program
   .command('update')
-  .description('Check npm for a newer version and print the upgrade command.')
+  .description(text.help.update)
   .action(async () => {
     await runUpdate();
   });
 
-for (const spec of BUILTIN_COMMANDS) program.addCommand(passthroughCommand(spec));
+for (const cmd of BUILTIN_COMMANDS) program.addCommand(passthroughCommand(cmd));
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CliError) {
@@ -92,6 +113,6 @@ program.parseAsync(process.argv).catch((err: unknown) => {
   }
   const e = err as Error;
   const debug = process.env.CLAUDENOMICS_LOG === 'debug';
-  log.error('unexpected error:', debug ? (e.stack ?? String(e)) : e.message);
+  log.error(text.errors.unexpected, debug ? (e.stack ?? String(e)) : e.message);
   process.exit(1);
 });
