@@ -1,28 +1,56 @@
-import { Command } from 'commander';
+import { Command as ProgramCommand } from 'commander';
 import { run } from './runner.js';
+import { text } from './text.js';
 import { runUpdateCheck } from './update-check.js';
 
-export interface PassthroughSpec {
+export type CommandSource = 'builtin' | 'plugin' | 'env';
+
+export interface CommandBase {
   name: string;
-  vendor: string;
-  binary: string;
+  source: CommandSource;
   description?: string;
+  load(): Promise<void>;
 }
 
-export function passthroughCommand(spec: PassthroughSpec): Command {
-  return new Command(spec.name)
-    .description(spec.description ?? `Run ${spec.binary} through the claudenomics proxy (all flags passthrough).`)
+export interface PassthroughCommand extends CommandBase {
+  type: 'passthrough';
+  vendor: string;
+  binary: string;
+}
+
+export type Command = PassthroughCommand;
+
+export function passthroughCommand(cmd: PassthroughCommand): ProgramCommand {
+  return new ProgramCommand(cmd.name)
+    .description(cmd.description ?? text.help.passthrough(cmd.binary))
     .allowUnknownOption(true)
     .allowExcessArguments(true)
     .helpOption(false)
     .argument('[args...]')
     .action(async (args: string[] | undefined) => {
+      await cmd.load();
       await runUpdateCheck();
-      process.exit(await run(spec.vendor, spec.binary, args ?? []));
+      process.exit(await run(cmd.vendor, cmd.binary, args ?? []));
     });
 }
 
-export const BUILTIN_COMMANDS: PassthroughSpec[] = [
-  { name: 'claude', vendor: 'anthropic', binary: 'claude' },
-  { name: 'codex', vendor: 'openai', binary: 'codex' },
+const noop = async (): Promise<void> => {};
+
+export const BUILTIN_COMMANDS: Command[] = [
+  {
+    type: 'passthrough',
+    source: 'builtin',
+    name: 'claude',
+    vendor: 'anthropic',
+    binary: 'claude',
+    load: noop,
+  },
+  {
+    type: 'passthrough',
+    source: 'builtin',
+    name: 'codex',
+    vendor: 'openai',
+    binary: 'codex',
+    load: noop,
+  },
 ];
