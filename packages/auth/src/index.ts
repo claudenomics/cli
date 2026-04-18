@@ -1,4 +1,4 @@
-export { login, type LoginOptions } from './login.js';
+export { login, type LoginOptions, type LoginPhase } from './login.js';
 export {
   createXdgSessionStore,
   type Session,
