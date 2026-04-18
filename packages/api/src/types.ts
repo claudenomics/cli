@@ -51,3 +51,9 @@ export interface UsageResponse {
   outputTokens: number;
   lastUpdated: number;
 }
+
+export interface ProfileResponse {
+  wallet: string;
+  league?: string;
+  rank?: number;
+}
