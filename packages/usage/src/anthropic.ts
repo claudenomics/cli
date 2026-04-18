@@ -1,5 +1,11 @@
 import { buildChildEnv } from './env.js';
-import type { ResponsePayload, TokenUsage, VendorConfig } from './index.js';
+import {
+  addUsage,
+  newUsage,
+  type ResponsePayload,
+  type TokenUsage,
+  type VendorConfig,
+} from './index.js';
 import { splitSSE, tryParse } from './sse.js';
 
 const ANTHROPIC_ALLOW: readonly string[] = [
@@ -11,50 +17,64 @@ const ANTHROPIC_ALLOW: readonly string[] = [
   'CLAUDE_CONFIG_DIR',
 ];
 
-interface Usage {
+interface AnthropicUsage {
   input_tokens?: number;
   output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  server_tool_use?: {
+    web_search_requests?: number;
+  };
 }
 
 interface MessageResponse {
-  usage?: Usage;
+  usage?: AnthropicUsage;
 }
 
 interface MessageStartEvent {
   type: 'message_start';
-  message: { usage: Usage };
+  message: { usage?: AnthropicUsage };
 }
 
 interface MessageDeltaEvent {
   type: 'message_delta';
-  usage?: Usage;
+  usage?: AnthropicUsage;
 }
 
 function isStream(contentType: string | undefined): boolean {
   return contentType?.includes('text/event-stream') ?? false;
 }
 
-function extractFromBody(text: string): TokenUsage {
-  const body = tryParse<MessageResponse>(text);
+function toDelta(u: AnthropicUsage | undefined): Partial<TokenUsage> {
+  if (!u) return {};
   return {
-    inputTokens: body?.usage?.input_tokens ?? 0,
-    outputTokens: body?.usage?.output_tokens ?? 0,
+    inputTokens: u.input_tokens,
+    outputTokens: u.output_tokens,
+    cacheReadTokens: u.cache_read_input_tokens,
+    cacheCreateTokens: u.cache_creation_input_tokens,
+    webSearchRequests: u.server_tool_use?.web_search_requests,
   };
 }
 
+function extractFromBody(text: string): TokenUsage {
+  const usage = newUsage();
+  const body = tryParse<MessageResponse>(text);
+  addUsage(usage, toDelta(body?.usage));
+  return usage;
+}
+
 function extractFromStream(text: string): TokenUsage {
-  let inputTokens = 0;
-  let outputTokens = 0;
+  const usage = newUsage();
   for (const event of splitSSE(text)) {
     if (event.name === 'message_start') {
       const start = tryParse<MessageStartEvent>(event.data);
-      if (start?.message.usage.input_tokens != null) inputTokens = start.message.usage.input_tokens;
+      addUsage(usage, toDelta(start?.message.usage));
     } else if (event.name === 'message_delta') {
       const delta = tryParse<MessageDeltaEvent>(event.data);
-      if (delta?.usage?.output_tokens != null) outputTokens = delta.usage.output_tokens;
+      addUsage(usage, toDelta(delta?.usage));
     }
   }
-  return { inputTokens, outputTokens };
+  return usage;
 }
 
 export const anthropic: VendorConfig = {

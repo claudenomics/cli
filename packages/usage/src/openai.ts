@@ -1,5 +1,5 @@
 import { buildChildEnv } from './env.js';
-import type { ResponsePayload, TokenUsage, VendorConfig } from './index.js';
+import { newUsage, type ResponsePayload, type TokenUsage, type VendorConfig } from './index.js';
 import { splitSSE, tryParse } from './sse.js';
 
 const OPENAI_ALLOW: readonly string[] = [
@@ -11,59 +11,77 @@ const OPENAI_ALLOW: readonly string[] = [
   'CODEX_HOME',
 ];
 
-const ZERO: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+interface ChatCompletionUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+}
 
 interface ChatCompletionBody {
   object?: 'chat.completion' | 'chat.completion.chunk';
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: ChatCompletionUsage;
+}
+
+interface ResponsesUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_tokens_details?: { cached_tokens?: number };
 }
 
 interface ResponsesBody {
   object?: 'response';
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: ResponsesUsage;
 }
 
 interface ResponseCompletedEvent {
   type: 'response.completed';
-  response: { usage?: { input_tokens?: number; output_tokens?: number } };
+  response: { usage?: ResponsesUsage };
 }
 
 function isStream(contentType: string | undefined): boolean {
   return contentType?.includes('text/event-stream') ?? false;
 }
 
+function fromChat(u: ChatCompletionUsage | undefined): TokenUsage | null {
+  if (!u || typeof u.prompt_tokens !== 'number') return null;
+  const cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+  const usage = newUsage();
+  usage.inputTokens = Math.max(0, u.prompt_tokens - cached);
+  usage.outputTokens = u.completion_tokens ?? 0;
+  usage.cacheReadTokens = cached;
+  return usage;
+}
+
+function fromResponses(u: ResponsesUsage | undefined): TokenUsage | null {
+  if (!u || typeof u.input_tokens !== 'number') return null;
+  const cached = u.input_tokens_details?.cached_tokens ?? 0;
+  const usage = newUsage();
+  usage.inputTokens = Math.max(0, u.input_tokens - cached);
+  usage.outputTokens = u.output_tokens ?? 0;
+  usage.cacheReadTokens = cached;
+  return usage;
+}
+
 function extractFromBody(text: string): TokenUsage {
   const body = tryParse<ChatCompletionBody & ResponsesBody>(text);
-  const usage = body?.usage;
-  if (!usage) return ZERO;
-  if (typeof usage.prompt_tokens === 'number') {
-    return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens ?? 0 };
-  }
-  if (typeof usage.input_tokens === 'number') {
-    return { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens ?? 0 };
-  }
-  return ZERO;
+  return fromChat(body?.usage) ?? fromResponses(body?.usage) ?? newUsage();
 }
 
 function extractFromStream(text: string): TokenUsage {
   for (const event of splitSSE(text)) {
     if (event.name === 'response.completed') {
       const completed = tryParse<ResponseCompletedEvent>(event.data);
-      const usage = completed?.response.usage;
-      if (usage?.input_tokens != null) {
-        return { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens ?? 0 };
-      }
+      const parsed = fromResponses(completed?.response.usage);
+      if (parsed) return parsed;
       continue;
     }
     const chunk = tryParse<ChatCompletionBody>(event.data);
-    if (chunk?.object === 'chat.completion.chunk' && chunk.usage?.prompt_tokens != null) {
-      return {
-        inputTokens: chunk.usage.prompt_tokens,
-        outputTokens: chunk.usage.completion_tokens ?? 0,
-      };
+    if (chunk?.object === 'chat.completion.chunk') {
+      const parsed = fromChat(chunk.usage);
+      if (parsed) return parsed;
     }
   }
-  return ZERO;
+  return newUsage();
 }
 
 export const openai: VendorConfig = {
