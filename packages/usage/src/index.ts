@@ -44,6 +44,7 @@ export interface VendorConfig {
   upstream: string;
   extractor: UsageExtractor;
   childEnv(proxyUrl: string, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+  childArgs?(proxyUrl: string, args: readonly string[]): string[];
 }
 
 export { anthropic } from './anthropic.js';

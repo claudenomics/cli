@@ -81,7 +81,8 @@ export async function run(vendorName: string, binary: string, args: string[]): P
 
   try {
     const env = vendor.childEnv(proxy.url, process.env);
-    const { exitCode } = await spawnChild(binaryPath, args, env);
+    const childArgs = vendor.childArgs ? vendor.childArgs(proxy.url, args) : args;
+    const { exitCode } = await spawnChild(binaryPath, childArgs, env);
     return exitCode;
   } finally {
     root.abort();

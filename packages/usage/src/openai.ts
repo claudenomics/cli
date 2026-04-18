@@ -4,12 +4,13 @@ import { splitSSE, tryParse } from './sse.js';
 
 const OPENAI_ALLOW: readonly string[] = [
   'OPENAI_API_KEY',
-  'OPENAI_BASE_URL',
   'OPENAI_PROJECT',
   'OPENAI_ORG_ID',
   'OPENAI_ORGANIZATION',
   'CODEX_HOME',
 ];
+
+const CODEX_PROXY_PROVIDER = 'claudenomics_proxy';
 
 interface ChatCompletionUsage {
   prompt_tokens?: number;
@@ -84,6 +85,26 @@ function extractFromStream(text: string): TokenUsage {
   return newUsage();
 }
 
+function codexConfigArgs(proxyUrl: string): string[] {
+  const baseUrl = `${proxyUrl}/v1`;
+  return [
+    '-c',
+    `model_provider="${CODEX_PROXY_PROVIDER}"`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.name="claudenomics proxy"`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.base_url="${baseUrl}"`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.env_key="OPENAI_API_KEY"`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.requires_openai_auth=true`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.wire_api="responses"`,
+    '-c',
+    `model_providers.${CODEX_PROXY_PROVIDER}.supports_websockets=false`,
+  ];
+}
+
 export const openai: VendorConfig = {
   name: 'openai',
   upstream: 'https://api.openai.com',
@@ -93,6 +114,6 @@ export const openai: VendorConfig = {
       return isStream(contentType) ? extractFromStream(text) : extractFromBody(text);
     },
   },
-  childEnv: (proxyUrl, base) =>
-    buildChildEnv(base, OPENAI_ALLOW, { OPENAI_BASE_URL: `${proxyUrl}/v1` }),
+  childEnv: (_proxyUrl, base) => buildChildEnv(base, OPENAI_ALLOW, {}),
+  childArgs: (proxyUrl, args) => [...codexConfigArgs(proxyUrl), ...args],
 };
