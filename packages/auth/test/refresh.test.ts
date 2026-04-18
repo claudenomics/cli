@@ -33,11 +33,12 @@ import { createRefresher } from '../src/refresh.js';
 import type { Session, SessionStore, SessionTokens } from '../src/session-store.js';
 
 function makeStore(initial?: { session: Session; tokens: SessionTokens }): SessionStore & {
-  calls: { save: number; clear: number };
+  calls: { save: number; clear: number; lock: number };
 } {
   let session = initial?.session ?? null;
   let tokens = initial?.tokens ?? null;
-  const calls = { save: 0, clear: 0 };
+  const calls = { save: 0, clear: 0, lock: 0 };
+  let chain: Promise<unknown> = Promise.resolve();
   return {
     calls,
     async load() {
@@ -57,6 +58,12 @@ function makeStore(initial?: { session: Session; tokens: SessionTokens }): Sessi
     },
     async getTokens() {
       return tokens;
+    },
+    async withLock<T>(fn: () => Promise<T>): Promise<T> {
+      calls.lock++;
+      const next = chain.then(fn);
+      chain = next.catch(() => undefined);
+      return next;
     },
   };
 }
@@ -152,6 +159,31 @@ describe('forceRefresh', () => {
     mockRefresh.mockRejectedValue(new ApiError('unknown', 0, 'boom'));
     await expect(r.forceRefresh()).rejects.toBeInstanceOf(ApiError);
     expect(store.calls.clear).toBe(0);
+  });
+
+  it('bails inside the lock when another process already rotated tokens', async () => {
+    const store = makeStore(seed());
+    const r = createRefresher(store);
+    mockRefresh.mockResolvedValue(bundle());
+    let release!: () => void;
+    const gate = new Promise<void>((res) => (release = res));
+    const originalWithLock = store.withLock.bind(store);
+    store.withLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+      await gate;
+      return originalWithLock(fn);
+    };
+    const p = r.forceRefresh();
+    await new Promise((r) => setImmediate(r));
+    await store.save(seed().session, {
+      accessToken: 'sibling',
+      refreshToken: 'crn_refresh_SIBLING',
+    });
+    store.calls.save = 0;
+    release();
+    await p;
+    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(store.calls.save).toBe(0);
+    expect((await store.getTokens())?.refreshToken).toBe('crn_refresh_SIBLING');
   });
 });
 

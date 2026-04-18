@@ -20,34 +20,40 @@ export function createRefresher(store: SessionStore): Refresher {
   let inflight: Promise<void> | null = null;
 
   async function doRefresh(): Promise<void> {
-    const session = await store.load();
-    if (!session) throw new AuthError('not signed in');
-    const tokens = await store.getTokens();
-    if (!tokens) {
+    const preSession = await store.load();
+    if (!preSession) throw new AuthError('not signed in');
+    const preTokens = await store.getTokens();
+    if (!preTokens) {
       await store.clear();
       throw new AuthError('session has no tokens — run `claudenomics login`');
     }
-    try {
-      const r = await api.refreshToken({ refreshToken: tokens.refreshToken });
-      await store.save(
-        {
-          version: 2,
-          userId: r.userId,
-          wallet: r.wallet,
-          ...(r.email ? { email: r.email } : {}),
-          createdAt: session.createdAt,
-          expiresAt: r.expiresAt,
-          refreshExpiresAt: r.refreshExpiresAt,
-        },
-        { accessToken: r.token, refreshToken: r.refreshToken },
-      );
-    } catch (err) {
-      if (err instanceof ApiError && CLEAR_ON_STATUSES.has(err.status)) {
-        await store.clear();
-        throw new AuthError('session expired — run `claudenomics login`');
+    await store.withLock(async () => {
+      const session = await store.load();
+      const tokens = await store.getTokens();
+      if (!session || !tokens) return;
+      if (tokens.refreshToken !== preTokens.refreshToken) return;
+      try {
+        const r = await api.refreshToken({ refreshToken: tokens.refreshToken });
+        await store.save(
+          {
+            version: 2,
+            userId: r.userId,
+            wallet: r.wallet,
+            ...(r.email ? { email: r.email } : {}),
+            createdAt: session.createdAt,
+            expiresAt: r.expiresAt,
+            refreshExpiresAt: r.refreshExpiresAt,
+          },
+          { accessToken: r.token, refreshToken: r.refreshToken },
+        );
+      } catch (err) {
+        if (err instanceof ApiError && CLEAR_ON_STATUSES.has(err.status)) {
+          await store.clear();
+          throw new AuthError('session expired — run `claudenomics login`');
+        }
+        throw err;
       }
-      throw err;
-    }
+    });
   }
 
   async function forceRefresh(): Promise<void> {
