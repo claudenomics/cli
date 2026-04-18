@@ -1,6 +1,7 @@
 export { login, type LoginOptions, type LoginPhase } from './login.js';
 export {
   createXdgSessionStore,
+  type LockedSessionStore,
   type Session,
   type SessionStore,
   type SessionTokens,

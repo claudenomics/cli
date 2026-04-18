@@ -27,14 +27,14 @@ export function createRefresher(store: SessionStore): Refresher {
       await store.clear();
       throw new AuthError('session has no tokens — run `claudenomics login`');
     }
-    await store.withLock(async () => {
-      const session = await store.load();
-      const tokens = await store.getTokens();
+    await store.withLock(async (locked) => {
+      const session = await locked.load();
+      const tokens = await locked.getTokens();
       if (!session || !tokens) return;
       if (tokens.refreshToken !== preTokens.refreshToken) return;
       try {
         const r = await api.refreshToken({ refreshToken: tokens.refreshToken });
-        await store.save(
+        await locked.save(
           {
             version: 2,
             userId: r.userId,
@@ -48,7 +48,7 @@ export function createRefresher(store: SessionStore): Refresher {
         );
       } catch (err) {
         if (err instanceof ApiError && CLEAR_ON_STATUSES.has(err.status)) {
-          await store.clear();
+          await locked.clear();
           throw new AuthError('session expired — run `claudenomics login`');
         }
         throw err;

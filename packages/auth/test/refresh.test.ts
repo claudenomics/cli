@@ -30,7 +30,7 @@ const ApiError = hoisted.ApiError;
 
 import { AuthError } from '../src/errors.js';
 import { createRefresher } from '../src/refresh.js';
-import type { Session, SessionStore, SessionTokens } from '../src/session-store.js';
+import type { LockedSessionStore, Session, SessionStore, SessionTokens } from '../src/session-store.js';
 
 function makeStore(initial?: { session: Session; tokens: SessionTokens }): SessionStore & {
   calls: { save: number; clear: number; lock: number };
@@ -39,8 +39,9 @@ function makeStore(initial?: { session: Session; tokens: SessionTokens }): Sessi
   let tokens = initial?.tokens ?? null;
   const calls = { save: 0, clear: 0, lock: 0 };
   let chain: Promise<unknown> = Promise.resolve();
-  return {
-    calls,
+  let lockedDepth = 0;
+
+  const lockedStore: LockedSessionStore = {
     async load() {
       return session;
     },
@@ -59,9 +60,40 @@ function makeStore(initial?: { session: Session; tokens: SessionTokens }): Sessi
     async getTokens() {
       return tokens;
     },
-    async withLock<T>(fn: () => Promise<T>): Promise<T> {
+  };
+
+  return {
+    calls,
+    async load() {
+      return session;
+    },
+    async save(s, t) {
+      if (lockedDepth > 0) throw new Error('public save() called while locked');
+      session = s;
+      tokens = t;
+      calls.save++;
+    },
+    async clear() {
+      if (lockedDepth > 0) throw new Error('public clear() called while locked');
+      const had = session !== null;
+      session = null;
+      tokens = null;
+      calls.clear++;
+      return had;
+    },
+    async getTokens() {
+      return tokens;
+    },
+    async withLock<T>(fn: (store: LockedSessionStore) => Promise<T>): Promise<T> {
       calls.lock++;
-      const next = chain.then(fn);
+      const next = chain.then(async () => {
+        lockedDepth++;
+        try {
+          return await fn(lockedStore);
+        } finally {
+          lockedDepth--;
+        }
+      });
       chain = next.catch(() => undefined);
       return next;
     },
@@ -168,7 +200,7 @@ describe('forceRefresh', () => {
     let release!: () => void;
     const gate = new Promise<void>((res) => (release = res));
     const originalWithLock = store.withLock.bind(store);
-    store.withLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    store.withLock = async <T>(fn: (store: LockedSessionStore) => Promise<T>): Promise<T> => {
       await gate;
       return originalWithLock(fn);
     };
