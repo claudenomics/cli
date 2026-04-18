@@ -1,6 +1,6 @@
 {
   "name": "@claudenomics/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Transparent wrapper around claude and codex with attested, wallet-bound token metering.",
   "type": "module",
   "bin": {
