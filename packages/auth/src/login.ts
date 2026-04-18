@@ -12,9 +12,12 @@ const log = createLogger('claudenomics');
 
 const TIMEOUT_MS = 5 * 60 * 1000;
 
+export type LoginPhase = 'opening' | 'awaiting' | 'verifying';
+
 export interface LoginOptions {
   authUrl?: string;
   sessionStore?: SessionStore;
+  onPhase?: (phase: LoginPhase) => void;
 }
 
 interface JwtVerifyConfig {
@@ -57,8 +60,12 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
   target.searchParams.set('code_challenge', pkce.challenge);
   target.searchParams.set('code_challenge_method', pkce.method);
 
-  log.info(`opening ${target.origin}${target.pathname}`);
-  if (!openBrowser(target.toString())) log.warn('could not open browser — check stderr for the URL');
+  opts.onPhase?.('opening');
+  const browserOpened = openBrowser(target.toString());
+  if (!browserOpened) {
+    process.stderr.write(`\nopen this URL manually:\n  ${target.toString()}\n\n`);
+  }
+  opts.onPhase?.('awaiting');
 
   let timer: NodeJS.Timeout | undefined;
   const onSigint = (): void => {
@@ -73,6 +80,8 @@ export async function login(opts: LoginOptions = {}): Promise<Session> {
         timer = setTimeout(() => rej(new AuthError('login timed out after 5m')), TIMEOUT_MS);
       }),
     ]);
+
+    opts.onPhase?.('verifying');
 
     let exchanged;
     try {
