@@ -28,6 +28,7 @@ export interface SessionStore {
   save(session: Session, tokens: SessionTokens): Promise<void>;
   clear(): Promise<boolean>;
   getTokens(): Promise<SessionTokens | null>;
+  withLock<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 const NOFOLLOW = (fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
@@ -88,10 +89,11 @@ export function createXdgSessionStore(opts: XdgSessionStoreOptions = {}): Sessio
   const entry = (): Entry => new Entry(service, KEYRING_ACCOUNT);
 
   const withLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const release = await lockfile.lock(path, {
       realpath: false,
       lockfilePath: `${path}.lock`,
-      retries: { retries: 5, minTimeout: 50, maxTimeout: 500 },
+      retries: { retries: 10, minTimeout: 50, maxTimeout: 500 },
     });
     try {
       return await fn();
@@ -166,5 +168,7 @@ export function createXdgSessionStore(opts: XdgSessionStoreOptions = {}): Sessio
       }
       return validTokens(parsed) ? parsed : null;
     },
+
+    withLock,
   };
 }
