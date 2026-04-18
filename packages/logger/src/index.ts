@@ -1,5 +1,7 @@
 import chalk from 'chalk';
 
+export * as colors from './colors.js';
+
 export type Level = 'debug' | 'info' | 'warn' | 'error';
 
 const order: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
