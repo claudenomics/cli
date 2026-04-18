@@ -23,12 +23,15 @@ export interface SessionTokens {
   refreshToken: string;
 }
 
-export interface SessionStore {
+export interface LockedSessionStore {
   load(): Promise<Session | null>;
   save(session: Session, tokens: SessionTokens): Promise<void>;
   clear(): Promise<boolean>;
   getTokens(): Promise<SessionTokens | null>;
-  withLock<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+export interface SessionStore extends LockedSessionStore {
+  withLock<T>(fn: (store: LockedSessionStore) => Promise<T>): Promise<T>;
 }
 
 const NOFOLLOW = (fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0;
@@ -88,7 +91,75 @@ export function createXdgSessionStore(opts: XdgSessionStoreOptions = {}): Sessio
   const service = opts.service ?? KEYRING_SERVICE;
   const entry = (): Entry => new Entry(service, KEYRING_ACCOUNT);
 
-  const withLock = async <T>(fn: () => Promise<T>): Promise<T> => {
+  const loadUnlocked = async (): Promise<Session | null> => {
+    const raw = await safeReadSession(path);
+    if (raw === null) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    if (!validSession(parsed)) return null;
+    if (parsed.refreshExpiresAt <= Date.now()) return null;
+    return parsed;
+  };
+
+  const getTokensUnlocked = async (): Promise<SessionTokens | null> => {
+    let raw: string | null;
+    try {
+      raw = entry().getPassword();
+    } catch {
+      return null;
+    }
+    if (!raw) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    return validTokens(parsed) ? parsed : null;
+  };
+
+  const saveUnlocked = async (session: Session, tokens: SessionTokens): Promise<void> => {
+    entry().setPassword(JSON.stringify(tokens));
+    const tmp = `${path}.tmp.${process.pid}`;
+    try {
+      const existing = await stat(tmp);
+      if (existing.isFile()) await unlink(tmp);
+    } catch {}
+    const fd = await open(tmp, 'wx', 0o600);
+    try {
+      await fd.writeFile(JSON.stringify(session, null, 2));
+    } finally {
+      await fd.close();
+    }
+    await rename(tmp, path);
+  };
+
+  const clearUnlocked = async (): Promise<boolean> => {
+    let cleared = false;
+    try {
+      if (entry().deletePassword()) cleared = true;
+    } catch {}
+    try {
+      await rm(path);
+      cleared = true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+    return cleared;
+  };
+
+  const lockedStore: LockedSessionStore = {
+    load: loadUnlocked,
+    save: saveUnlocked,
+    clear: clearUnlocked,
+    getTokens: getTokensUnlocked,
+  };
+
+  const withLock = async <T>(fn: (store: LockedSessionStore) => Promise<T>): Promise<T> => {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
     const release = await lockfile.lock(path, {
       realpath: false,
@@ -96,79 +167,17 @@ export function createXdgSessionStore(opts: XdgSessionStoreOptions = {}): Sessio
       retries: { retries: 10, minTimeout: 50, maxTimeout: 500 },
     });
     try {
-      return await fn();
+      return await fn(lockedStore);
     } finally {
       await release();
     }
   };
 
   return {
-    async load() {
-      const raw = await safeReadSession(path);
-      if (raw === null) return null;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return null;
-      }
-      if (!validSession(parsed)) return null;
-      if (parsed.refreshExpiresAt <= Date.now()) return null;
-      return parsed;
-    },
-
-    async save(session, tokens) {
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      await withLock(async () => {
-        entry().setPassword(JSON.stringify(tokens));
-        const tmp = `${path}.tmp.${process.pid}`;
-        try {
-          const existing = await stat(tmp);
-          if (existing.isFile()) await unlink(tmp);
-        } catch {}
-        const fd = await open(tmp, 'wx', 0o600);
-        try {
-          await fd.writeFile(JSON.stringify(session, null, 2));
-        } finally {
-          await fd.close();
-        }
-        await rename(tmp, path);
-      });
-    },
-
-    async clear() {
-      let cleared = false;
-      try {
-        if (entry().deletePassword()) cleared = true;
-      } catch {}
-      await withLock(async () => {
-        try {
-          await rm(path);
-          cleared = true;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-        }
-      });
-      return cleared;
-    },
-
-    async getTokens() {
-      let raw: string | null;
-      try {
-        raw = entry().getPassword();
-      } catch {
-        return null;
-      }
-      if (!raw) return null;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return null;
-      }
-      return validTokens(parsed) ? parsed : null;
-    },
-
+    load: loadUnlocked,
+    save: (session, tokens) => withLock((store) => store.save(session, tokens)),
+    clear: () => withLock((store) => store.clear()),
+    getTokens: getTokensUnlocked,
     withLock,
   };
 }
