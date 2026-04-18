@@ -1,9 +1,13 @@
-import chalk from 'chalk';
 import type { Session } from '@claudenomics/auth';
+import { styles } from './styles.js';
 
 export function formatIdentity(s: Session): string {
-  const parts = [s.email && chalk.white(s.email), chalk.cyan(shortAddr(s.wallet)), chalk.gray(s.userId)].filter(Boolean);
-  return parts.join(chalk.gray(' · '));
+  const parts = [
+    s.email && styles.accent(s.email),
+    styles.info(shortAddr(s.wallet)),
+    styles.muted(s.userId),
+  ].filter(Boolean);
+  return parts.join(` ${styles.bullet} `);
 }
 
 function shortAddr(addr: string): string {

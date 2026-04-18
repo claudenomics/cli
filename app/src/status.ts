@@ -1,8 +1,9 @@
-import chalk from 'chalk';
 import { getApiBaseUrl } from '@claudenomics/api';
 import { loadSession, type Session } from '@claudenomics/auth';
 import { formatIdentity } from './format.js';
 import { createFileReceiptStore } from './receipt-store.js';
+import { styles } from './styles.js';
+import { text } from './text.js';
 
 interface CheckResult {
   ok: boolean;
@@ -25,7 +26,7 @@ function fail(detail: string): CheckResult {
 }
 
 function mark(result: CheckResult): string {
-  return result.ok ? chalk.green('✓') : chalk.red('✗');
+  return result.ok ? styles.check : styles.cross;
 }
 
 function formatDuration(ms: number): string {
@@ -66,29 +67,29 @@ async function probe(rawUrl: string, path: string, parseOk?: (body: unknown) => 
 }
 
 function sessionLine(session: Session | null): CheckResult {
-  if (!session) return fail(`not signed in — run ${chalk.cyan('claudenomics login')}`);
-  return ok(`Logged in as ${formatIdentity(session)}`);
+  if (!session) return fail(text.session.notSignedIn(styles.cmd('claudenomics login')));
+  return ok(text.status.loggedInAs(formatIdentity(session)));
 }
 
 function sessionExpiryLine(session: Session | null): CheckResult | null {
   if (!session) return null;
   const access = session.expiresAt - Date.now();
   const refresh = session.refreshExpiresAt - Date.now();
-  if (refresh <= 0) return fail(`Session expired — run ${chalk.cyan('claudenomics login')}`);
-  const accessDetail = access > 0 ? formatDuration(access) : 'expired (auto-refresh on next call)';
-  return ok(`Access ${accessDetail} · refresh window ${formatDuration(refresh)}`);
+  if (refresh <= 0) return fail(text.status.sessionExpired(styles.cmd('claudenomics login')));
+  const accessDetail = access > 0 ? formatDuration(access) : text.status.accessExpired;
+  return ok(text.status.accessLine(accessDetail, formatDuration(refresh)));
 }
 
 function enclaveLine(probe: ProbeResult | null): CheckResult {
-  if (probe === null) return fail('CLAUDENOMICS_ENCLAVE_URL not set');
-  if (!probe.ok) return fail(`Enclave unreachable: ${probe.error}`);
+  if (probe === null) return fail(text.status.enclaveNotSet);
+  if (!probe.ok) return fail(text.status.enclaveUnreachable(probe.error ?? ''));
   const host = new URL(probe.url).host;
-  return ok(`Enclave reachable (${host}${probe.detail ? ` · ${probe.detail}` : ''})`);
+  return ok(text.status.enclaveReachable(host, probe.detail));
 }
 
 function apiLine(probe: ProbeResult): CheckResult {
-  if (!probe.ok) return fail(`API unreachable: ${probe.error}`);
-  return ok(`API reachable (${new URL(probe.url).host})`);
+  if (!probe.ok) return fail(text.status.apiUnreachable(probe.error ?? ''));
+  return ok(text.status.apiReachable(new URL(probe.url).host));
 }
 
 export async function runStatus(): Promise<void> {
@@ -120,5 +121,5 @@ export async function runStatus(): Promise<void> {
   for (const line of lines) {
     process.stdout.write(`${mark(line)} ${line.detail}\n`);
   }
-  process.stdout.write(`  ${chalk.gray('Pending receipts:')} ${pending.length}\n`);
+  process.stdout.write(`  ${styles.muted(text.status.pendingReceipts)} ${pending.length}\n`);
 }

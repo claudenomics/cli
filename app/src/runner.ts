@@ -1,13 +1,15 @@
 import { execFileSync, spawn } from 'node:child_process';
-import chalk from 'chalk';
 import { getSessionToken, loadSession } from '@claudenomics/auth';
 import { createLogger } from '@claudenomics/logger';
 import { startProxy, type ResponseHandler } from '@claudenomics/proxy';
-import type { TokenUsage } from '@claudenomics/usage';
-import { getVendor } from './vendors.js';
+import { addUsage, newUsage, type TokenUsage } from '@claudenomics/usage';
+import { createRootAbortController } from './abort.js';
 import { BinaryNotFoundError, CliError } from './errors.js';
 import { createFileReceiptStore, type ReceiptStore } from './receipt-store.js';
 import { persistAndSubmitReceipt, retryPendingReceipts } from './receipts.js';
+import { styles } from './styles.js';
+import { text } from './text.js';
+import { getVendor } from './vendors.js';
 
 const log = createLogger('claudenomics·runner');
 
@@ -27,16 +29,14 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
   if (!url) return null;
   const session = await loadSession();
   if (!session) {
-    throw new CliError(
-      'CLAUDENOMICS_ENCLAVE_URL is set but no session — run `claudenomics login` first',
-    );
+    throw new CliError(text.session.enclaveSetNoSession);
   }
   return {
     upstream: new URL(url),
     buildHeaders: async () => {
       const token = await getSessionToken();
       if (!token) {
-        throw new CliError('session has no token in keychain — run `claudenomics login` again');
+        throw new CliError(text.session.noTokenRelogin);
       }
       return {
         [WALLET_HEADER]: session.wallet,
@@ -50,29 +50,28 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
 export async function run(vendorName: string, binary: string, args: string[]): Promise<number> {
   const session = await loadSession();
   if (!session) {
-    throw new CliError(`not signed in — run ${chalk.cyan('claudenomics login')}`);
+    throw new CliError(text.session.notSignedIn(styles.cmd('claudenomics login')));
   }
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
-  const totals: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  const totals: TokenUsage = newUsage();
   const enclave = await loadEnclaveConfig(vendorName);
+  const root = createRootAbortController();
 
   let receiptStore: ReceiptStore | null = null;
   if (enclave) {
     receiptStore = createFileReceiptStore();
-    retryPendingReceipts(receiptStore).catch((err) => {
+    retryPendingReceipts(receiptStore, root.signal).catch((err) => {
       log.debug('pending retry failed:', (err as Error).message);
     });
   }
 
   const countTokens: ResponseHandler = (response) => {
-    const usage = vendor.extractor.extract(response);
-    totals.inputTokens += usage.inputTokens;
-    totals.outputTokens += usage.outputTokens;
+    addUsage(totals, vendor.extractor.extract(response));
   };
 
   const handlers: ResponseHandler[] = [countTokens];
-  if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore));
+  if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore, root.signal));
 
   const proxy = await startProxy({
     upstream: enclave?.upstream ?? new URL(vendor.upstream),
@@ -85,12 +84,19 @@ export async function run(vendorName: string, binary: string, args: string[]): P
     const { exitCode } = await spawnChild(binaryPath, args, env);
     return exitCode;
   } finally {
+    root.abort();
     await proxy.stop();
     const route = enclave ? `via ${enclave.upstream.host}` : 'direct';
-    process.stderr.write(
-      `${chalk.cyan('claudenomics')} in=${totals.inputTokens} out=${totals.outputTokens} (${route})\n`,
-    );
+    process.stderr.write(`${styles.info('claudenomics')} ${formatTotals(totals)} (${route})\n`);
   }
+}
+
+function formatTotals(t: TokenUsage): string {
+  const parts = [`in=${t.inputTokens}`, `out=${t.outputTokens}`];
+  if (t.cacheReadTokens > 0) parts.push(`cache_r=${t.cacheReadTokens}`);
+  if (t.cacheCreateTokens > 0) parts.push(`cache_w=${t.cacheCreateTokens}`);
+  if (t.webSearchRequests > 0) parts.push(`web=${t.webSearchRequests}`);
+  return parts.join(' ');
 }
 
 function findBinary(name: string): string {

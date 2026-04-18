@@ -2,6 +2,7 @@ import { api, ApiError, type SignedReceipt } from '@claudenomics/api';
 import { createLogger } from '@claudenomics/logger';
 import type { ProxiedResponse, ResponseHandler } from '@claudenomics/proxy';
 import type { ReceiptStore } from './receipt-store.js';
+import { withRetry } from './retry.js';
 
 const log = createLogger('claudenomics·receipts');
 
@@ -38,23 +39,41 @@ function decodeReceipt(b64: string): SignedReceipt | null {
   }
 }
 
-async function trySubmit(signed: SignedReceipt, store: ReceiptStore): Promise<void> {
+async function trySubmit(
+  signed: SignedReceipt,
+  store: ReceiptStore,
+  signal?: AbortSignal,
+): Promise<void> {
   const id = signed.receipt.response_id;
   if (!id) return;
   try {
-    await api.submitReceipt(signed);
+    await withRetry(() => api.submitReceipt(signed), { signal });
     await store.markSubmitted(id);
     log.debug('submitted receipt', id);
   } catch (err) {
     if (err instanceof ApiError) {
       log.warn(`submit failed (${err.status}): ${err.code} — kept in pending/`);
+    } else if (isAbortError(err)) {
+      log.debug('submit aborted — receipt kept in pending/');
     } else {
       log.warn(`submit failed: ${(err as Error).message} — kept in pending/`);
     }
   }
 }
 
-export function persistAndSubmitReceipt(store: ReceiptStore): ResponseHandler {
+function isAbortError(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    'name' in err &&
+    (err as { name: string }).name === 'AbortError'
+  );
+}
+
+export function persistAndSubmitReceipt(
+  store: ReceiptStore,
+  signal?: AbortSignal,
+): ResponseHandler {
   return async (response: ProxiedResponse): Promise<void> => {
     let encoded: string | null = readReceiptHeader(response.responseHeaders);
     if (!encoded && response.contentType?.includes('text/event-stream')) {
@@ -67,15 +86,19 @@ export function persistAndSubmitReceipt(store: ReceiptStore): ResponseHandler {
       return;
     }
     await store.save(signed);
-    await trySubmit(signed, store);
+    await trySubmit(signed, store, signal);
   };
 }
 
-export async function retryPendingReceipts(store: ReceiptStore): Promise<void> {
+export async function retryPendingReceipts(
+  store: ReceiptStore,
+  signal?: AbortSignal,
+): Promise<void> {
   const pending = await store.listPending();
   if (pending.length === 0) return;
   log.debug(`retrying ${pending.length} pending receipt(s)`);
   for (const { signed } of pending) {
-    await trySubmit(signed as SignedReceipt, store);
+    if (signal?.aborted) return;
+    await trySubmit(signed as SignedReceipt, store, signal);
   }
 }

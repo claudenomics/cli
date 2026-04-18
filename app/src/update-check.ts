@@ -1,5 +1,6 @@
-import chalk from 'chalk';
 import { CliError } from './errors.js';
+import { styles } from './styles.js';
+import { text } from './text.js';
 
 declare const __CLAUDENOMICS_VERSION__: string;
 
@@ -50,26 +51,24 @@ export async function runUpdateCheck(): Promise<void> {
   const current = __CLAUDENOMICS_VERSION__;
   const data = await fetchPackument();
   if (!data) {
-    process.stderr.write(
-      chalk.yellow(
-        'update check timed out — proceeding (set CLAUDENOMICS_SKIP_UPDATE_CHECK=1 to silence)\n',
-      ),
-    );
+    process.stderr.write(styles.warn(`${text.update.timeout}\n`));
     return;
   }
 
   const currentMeta = data.versions?.[current];
   if (currentMeta?.deprecated) {
-    process.stderr.write(chalk.red(`this version (${current}) is deprecated: ${currentMeta.deprecated}\n`));
-    process.stderr.write(chalk.red(`update: ${INSTALL_CMD}\n`));
-    process.stderr.write(chalk.gray('override: CLAUDENOMICS_SKIP_UPDATE_CHECK=1\n'));
-    throw new CliError('refusing to run deprecated version');
+    process.stderr.write(
+      styles.error(`${text.update.deprecated(current, currentMeta.deprecated)}\n`),
+    );
+    process.stderr.write(styles.error(`${text.update.updateHint(INSTALL_CMD)}\n`));
+    process.stderr.write(styles.muted(`${text.update.override}\n`));
+    throw new CliError(text.update.refusing);
   }
 
   const latest = data['dist-tags']?.latest;
   if (latest && isNewer(latest, current)) {
     process.stderr.write(
-      chalk.yellow(`update available: ${current} → ${latest} (${INSTALL_CMD})\n`),
+      styles.warn(`${text.update.updateAvailable(current, latest, INSTALL_CMD)}\n`),
     );
   }
 }
@@ -78,15 +77,15 @@ export async function runUpdate(): Promise<void> {
   const current = __CLAUDENOMICS_VERSION__;
   const data = await fetchPackument();
   if (!data) {
-    throw new CliError('could not reach npm registry');
+    throw new CliError(text.update.unreachable);
   }
   const latest = data['dist-tags']?.latest;
-  if (!latest) throw new CliError('npm registry returned no latest version');
+  if (!latest) throw new CliError(text.update.noLatest);
 
-  process.stdout.write(`current: ${current}\nlatest:  ${latest}\n`);
+  process.stdout.write(`${text.update.currentLatest(current, latest)}\n`);
   if (isNewer(latest, current)) {
-    process.stdout.write(`\nrun: ${chalk.cyan(INSTALL_CMD)}\n`);
+    process.stdout.write(`\n${text.update.runHint(styles.cmd(INSTALL_CMD))}\n`);
   } else {
-    process.stdout.write(`${chalk.green('✓')} already on latest\n`);
+    process.stdout.write(`${styles.check} ${text.update.alreadyLatest}\n`);
   }
 }
