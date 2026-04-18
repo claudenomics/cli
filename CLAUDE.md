@@ -49,9 +49,13 @@ no side effects on import — the vendor registry lives in
 
 ## Non-obvious
 
-- `claude` and `codex` honor `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`.
-  The base URL **must not** have a path suffix — the vendor SDKs call
-  `new URL('/v1/messages', base)`, which strips any subpath.
+- `claude` still honors `ANTHROPIC_BASE_URL`, but modern `codex` no
+  longer routes correctly through `OPENAI_BASE_URL`. Codex 0.121 uses
+  the Responses API over a websocket transport by default, so the
+  wrapper injects `-c model_providers.<id>.*` overrides to force an
+  HTTP `responses` provider pointed at `${proxy}/v1`.
+- For Anthropic, the base URL **must not** have a path suffix — the
+  SDK calls `new URL('/v1/messages', base)`, which strips any subpath.
 - For API-key users, `runner.ts` mirrors `ANTHROPIC_API_KEY` into
   `ANTHROPIC_AUTH_TOKEN` since Claude Code expects the latter when a
   base URL override is set.
