@@ -2,16 +2,29 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { AuthError } from './errors.js';
+import { renderError, renderSuccess } from './callback-page.js';
 
 export interface Callback {
   code: string;
   state: string;
 }
 
-const HEADERS = {
+const HTML_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'cache-control': 'no-store',
+  'referrer-policy': 'no-referrer',
+  'content-security-policy':
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+};
+
+const TEXT_HEADERS = {
   'content-type': 'text/plain; charset=utf-8',
   'cache-control': 'no-store',
   'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
 };
 
 function safeEqual(a: string, b: string): boolean {
@@ -45,20 +58,23 @@ export async function listen(expectedState: string) {
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (url.pathname !== '/callback') return void res.writeHead(404).end();
+    if (url.pathname !== '/callback') return void res.writeHead(404, TEXT_HEADERS).end('not found');
 
-    const send = (status: number, body: string): void => void res.writeHead(status, HEADERS).end(body);
+    const sendText = (status: number, body: string): void =>
+      void res.writeHead(status, TEXT_HEADERS).end(body);
+    const sendHtml = (status: number, body: string): void =>
+      void res.writeHead(status, HTML_HEADERS).end(body);
 
-    if (req.headers.host !== expectedHost) return send(400, 'bad host');
-    if (settled) return send(409, 'already completed');
+    if (req.headers.host !== expectedHost) return sendText(400, 'bad host');
+    if (settled) return sendHtml(409, renderError('This sign-in link has already been used.'));
 
     const parsed = parseCallback(url.searchParams, expectedState);
     settled = true;
     if (typeof parsed === 'string') {
-      send(400, parsed);
+      sendHtml(400, renderError(parsed));
       reject(new AuthError(parsed));
     } else {
-      send(200, 'signed in — you can close this tab');
+      sendHtml(200, renderSuccess());
       resolve(parsed);
     }
   });
