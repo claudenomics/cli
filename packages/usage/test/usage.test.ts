@@ -118,6 +118,39 @@ describe('anthropic', () => {
 });
 
 describe('openai', () => {
+  it('childEnv does not forward deprecated OPENAI_BASE_URL', () => {
+    const env = openai.childEnv('http://proxy.test', {
+      PATH: '/bin',
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_BASE_URL: 'https://deprecated.example',
+      CODEX_HOME: '/tmp/codex-home',
+    });
+    expect(env.OPENAI_API_KEY).toBe('sk-test');
+    expect(env.CODEX_HOME).toBe('/tmp/codex-home');
+    expect(env.OPENAI_BASE_URL).toBeUndefined();
+  });
+
+  it('childArgs injects a Codex proxy provider over HTTP responses', () => {
+    expect(openai.childArgs?.('http://127.0.0.1:8787', ['exec', 'hello'])).toEqual([
+      '-c',
+      'model_provider="claudenomics_proxy"',
+      '-c',
+      'model_providers.claudenomics_proxy.name="claudenomics proxy"',
+      '-c',
+      'model_providers.claudenomics_proxy.base_url="http://127.0.0.1:8787/v1"',
+      '-c',
+      'model_providers.claudenomics_proxy.env_key="OPENAI_API_KEY"',
+      '-c',
+      'model_providers.claudenomics_proxy.requires_openai_auth=true',
+      '-c',
+      'model_providers.claudenomics_proxy.wire_api="responses"',
+      '-c',
+      'model_providers.claudenomics_proxy.supports_websockets=false',
+      'exec',
+      'hello',
+    ]);
+  });
+
   it('chat completions non-stream: prompt_tokens + completion_tokens', () => {
     const body = JSON.stringify({
       object: 'chat.completion',
