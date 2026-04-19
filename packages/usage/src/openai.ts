@@ -95,8 +95,6 @@ function codexConfigArgs(proxyUrl: string): string[] {
     '-c',
     `model_providers.${CODEX_PROXY_PROVIDER}.base_url="${baseUrl}"`,
     '-c',
-    `model_providers.${CODEX_PROXY_PROVIDER}.env_key="OPENAI_API_KEY"`,
-    '-c',
     `model_providers.${CODEX_PROXY_PROVIDER}.requires_openai_auth=true`,
     '-c',
     `model_providers.${CODEX_PROXY_PROVIDER}.wire_api="responses"`,
