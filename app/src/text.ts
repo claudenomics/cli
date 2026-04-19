@@ -62,7 +62,17 @@ export const text = {
     },
     whoami: 'Show your email, wallet, and session status.',
     logout: 'Revoke the session on the server and clear local state.',
-    usage: 'Show your accumulated token usage from the backend.',
+    usage: 'Show your token usage from the backend (with model and provider breakdown).',
+    usagePeriod: 'Period to summarize: day, week, month, or all (default all).',
+    profile: 'Show a public profile with stats (defaults to yourself).',
+    profilePeriod: 'Period to summarize: day, week, month, or all (default all).',
+    leaderboard: 'Show the builders or squads leaderboard.',
+    leaderboardView: 'View: builders or squads (default builders).',
+    leaderboardPeriod: 'Period: day, week, month, or all (default all).',
+    leaderboardLeague: 'Filter by league slug.',
+    leaderboardSearch: 'Filter by handle or name.',
+    leaderboardPage: 'Page number (default 1).',
+    leaderboardPageSize: 'Entries per page, 1–100 (default 25).',
     status: 'Check session, enclave, backend reachability, and pending receipts.',
     update: 'Check npm for a newer version and print the upgrade command.',
     passthrough: (binary: string): string =>
@@ -110,12 +120,55 @@ export const text = {
   usage: {
     requestFailed: (code: string): string => `Usage request failed: ${code}`,
     tokensLabel: 'tokens',
-    inLabel: 'in',
-    outLabel: 'out',
     pending: (n: number): string => `${n} receipt${n === 1 ? '' : 's'} pending`,
     updated: (rel: string): string => `updated ${rel}`,
     justNow: 'just now',
-    profileUrl: (wallet: string): string => `claudenomics.xyz/u/${wallet}`,
+    profileUrl: (handleOrWallet: string): string => `claudenomics.xyz/u/${handleOrWallet}`,
+  },
+
+  stats: {
+    periodLabels: {
+      day: 'today',
+      week: 'this week',
+      month: 'this month',
+      all: 'all time',
+    } satisfies Record<'day' | 'week' | 'month' | 'all', string>,
+    inLabel: 'in',
+    outLabel: 'out',
+    receiptsLabel: 'receipts',
+    sessionsLabel: 'sessions',
+    byModel: 'by model',
+    byProvider: 'by provider',
+    empty: 'no activity yet',
+    periodHint: 'tip: --period day | week | month | all',
+    nextLeague: (slug: string, tokens: string): string =>
+      `next: ${slug} in ${tokens} tokens`,
+    rankLabel: (rank: number): string => `#${rank}`,
+  },
+
+  profile: {
+    noTarget: (cmd: string): string => `No profile target — pass a handle or run ${cmd}`,
+    notFound: (handle: string): string => `Profile not found: ${handle}`,
+    requestFailed: (code: string): string => `Profile request failed: ${code}`,
+  },
+
+  leaderboard: {
+    requestFailed: (code: string): string => `Leaderboard request failed: ${code}`,
+    empty: 'no entries match',
+    viewLabels: {
+      builders: 'builders leaderboard',
+      squads: 'squads leaderboard',
+    } satisfies Record<'builders' | 'squads', string>,
+    cols: {
+      name: 'name',
+      handle: 'handle',
+      league: 'league',
+      tokens: 'tokens',
+      receipts: 'receipts',
+      model: 'top model',
+    },
+    pageFooter: (page: number, totalPages: number, total: number): string =>
+      `page ${page} of ${totalPages}  ·  ${total} total`,
   },
 
   whoami: {

@@ -2,7 +2,8 @@ import chalk from 'chalk';
 import { type ProfileResponse, type UsageResponse } from '@claudenomics/api';
 import { loadSession, type Session } from '@claudenomics/auth';
 import { colors } from '@claudenomics/logger';
-import { fetchProfile, fetchUsage, formatTokens, shortAddr } from './account.js';
+import { fetchProfile, fetchUsage } from './account.js';
+import { formatTokens, shortAddr } from './format.js';
 import { text } from './text.js';
 import {
   SHIMMER_DURATION_MS,
