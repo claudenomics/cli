@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { buildChildEnv } from './env.js';
 import { newUsage, type ResponsePayload, type TokenUsage, type VendorConfig } from './index.js';
 import { splitSSE, tryParse } from './sse.js';
@@ -11,6 +14,30 @@ const OPENAI_ALLOW: readonly string[] = [
 ];
 
 const CODEX_PROXY_PROVIDER = 'claudenomics_proxy';
+
+const OPENAI_API_UPSTREAM = 'https://api.openai.com';
+const OPENAI_API_BASE_PATH = '/v1';
+const CHATGPT_UPSTREAM = 'https://chatgpt.com';
+const CHATGPT_BASE_PATH = '/backend-api/codex';
+
+export const CODEX_AUTH_MODE_HEADER = 'x-claudenomics-codex-auth-mode';
+
+type CodexAuthMode = 'chatgpt' | 'apikey';
+
+interface CodexAuthFile {
+  auth_mode?: CodexAuthMode | null;
+}
+
+function codexAuthMode(base: NodeJS.ProcessEnv): CodexAuthMode {
+  const home = base.CODEX_HOME ?? join(base.HOME ?? homedir(), '.codex');
+  try {
+    const raw = readFileSync(join(home, 'auth.json'), 'utf8');
+    const parsed = JSON.parse(raw) as CodexAuthFile;
+    return parsed.auth_mode === 'chatgpt' ? 'chatgpt' : 'apikey';
+  } catch {
+    return 'apikey';
+  }
+}
 
 interface ChatCompletionUsage {
   prompt_tokens?: number;
@@ -41,6 +68,10 @@ interface ResponseCompletedEvent {
 
 function isStream(contentType: string | undefined): boolean {
   return contentType?.includes('text/event-stream') ?? false;
+}
+
+function looksLikeSSE(text: string): boolean {
+  return text.startsWith('event:') || text.startsWith('data:');
 }
 
 function fromChat(u: ChatCompletionUsage | undefined): TokenUsage | null {
@@ -85,8 +116,12 @@ function extractFromStream(text: string): TokenUsage {
   return newUsage();
 }
 
-function codexConfigArgs(proxyUrl: string): string[] {
-  const baseUrl = `${proxyUrl}/v1`;
+function codexBasePath(base: NodeJS.ProcessEnv): string {
+  return codexAuthMode(base) === 'chatgpt' ? CHATGPT_BASE_PATH : OPENAI_API_BASE_PATH;
+}
+
+function codexConfigArgs(proxyUrl: string, base: NodeJS.ProcessEnv): string[] {
+  const baseUrl = `${proxyUrl}${codexBasePath(base)}`;
   return [
     '-c',
     `model_provider="${CODEX_PROXY_PROVIDER}"`,
@@ -105,13 +140,15 @@ function codexConfigArgs(proxyUrl: string): string[] {
 
 export const openai: VendorConfig = {
   name: 'openai',
-  upstream: 'https://api.openai.com',
+  upstream: (base) => (codexAuthMode(base) === 'chatgpt' ? CHATGPT_UPSTREAM : OPENAI_API_UPSTREAM),
   extractor: {
     extract: ({ responseBody, contentType }: ResponsePayload): TokenUsage => {
       const text = responseBody.toString('utf8');
-      return isStream(contentType) ? extractFromStream(text) : extractFromBody(text);
+      if (isStream(contentType) || looksLikeSSE(text)) return extractFromStream(text);
+      return extractFromBody(text);
     },
   },
   childEnv: (_proxyUrl, base) => buildChildEnv(base, OPENAI_ALLOW, {}),
-  childArgs: (proxyUrl, args) => [...codexConfigArgs(proxyUrl), ...args],
+  childArgs: (proxyUrl, args, base) => [...codexConfigArgs(proxyUrl, base), ...args],
+  enclaveHeaders: (base) => ({ [CODEX_AUTH_MODE_HEADER]: codexAuthMode(base) }),
 };

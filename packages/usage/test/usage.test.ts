@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { anthropic, openai, type TokenUsage } from '../src/index.js';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { anthropic, openai, resolveUpstream, type TokenUsage } from '../src/index.js';
 
 const buf = (s: string) => Buffer.from(s, 'utf8');
 
@@ -118,6 +121,18 @@ describe('anthropic', () => {
 });
 
 describe('openai', () => {
+  let codexHome: string;
+  const writeAuth = (mode: 'chatgpt' | 'apikey' | null) => {
+    writeFileSync(join(codexHome, 'auth.json'), JSON.stringify({ auth_mode: mode }));
+  };
+
+  beforeEach(() => {
+    codexHome = mkdtempSync(join(tmpdir(), 'codex-home-'));
+  });
+  afterEach(() => {
+    rmSync(codexHome, { recursive: true, force: true });
+  });
+
   it('childEnv does not forward deprecated OPENAI_BASE_URL', () => {
     const env = openai.childEnv('http://proxy.test', {
       PATH: '/bin',
@@ -130,8 +145,11 @@ describe('openai', () => {
     expect(env.OPENAI_BASE_URL).toBeUndefined();
   });
 
-  it('childArgs injects a Codex proxy provider over HTTP responses', () => {
-    expect(openai.childArgs?.('http://127.0.0.1:8787', ['exec', 'hello'])).toEqual([
+  it('apikey mode: upstream is api.openai.com and base_url uses /v1', () => {
+    writeAuth('apikey');
+    const base = { CODEX_HOME: codexHome };
+    expect(resolveUpstream(openai, base)).toBe('https://api.openai.com');
+    expect(openai.childArgs?.('http://127.0.0.1:8787', ['exec', 'hello'], base)).toEqual([
       '-c',
       'model_provider="claudenomics_proxy"',
       '-c',
@@ -147,6 +165,66 @@ describe('openai', () => {
       'exec',
       'hello',
     ]);
+  });
+
+  it('chatgpt mode: upstream is chatgpt.com and base_url uses /backend-api/codex', () => {
+    writeAuth('chatgpt');
+    const base = { CODEX_HOME: codexHome };
+    expect(resolveUpstream(openai, base)).toBe('https://chatgpt.com');
+    expect(openai.childArgs?.('http://127.0.0.1:8787', [], base)).toEqual([
+      '-c',
+      'model_provider="claudenomics_proxy"',
+      '-c',
+      'model_providers.claudenomics_proxy.name="claudenomics proxy"',
+      '-c',
+      'model_providers.claudenomics_proxy.base_url="http://127.0.0.1:8787/backend-api/codex"',
+      '-c',
+      'model_providers.claudenomics_proxy.requires_openai_auth=true',
+      '-c',
+      'model_providers.claudenomics_proxy.wire_api="responses"',
+      '-c',
+      'model_providers.claudenomics_proxy.supports_websockets=false',
+    ]);
+  });
+
+  it('enclaveHeaders advertises chatgpt mode', () => {
+    writeAuth('chatgpt');
+    expect(openai.enclaveHeaders?.({ CODEX_HOME: codexHome })).toEqual({
+      'x-claudenomics-codex-auth-mode': 'chatgpt',
+    });
+  });
+
+  it('enclaveHeaders advertises apikey mode by default', () => {
+    expect(openai.enclaveHeaders?.({ CODEX_HOME: join(codexHome, 'missing') })).toEqual({
+      'x-claudenomics-codex-auth-mode': 'apikey',
+    });
+  });
+
+  it('falls back to apikey routing when auth.json is missing', () => {
+    const base = { CODEX_HOME: join(codexHome, 'does-not-exist') };
+    expect(resolveUpstream(openai, base)).toBe('https://api.openai.com');
+  });
+
+  it('responses API stream without content-type still extracts via SSE sniff', () => {
+    const sse =
+      'event: response.completed\n' +
+      'data: {"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":13,"output_tokens":4}}}\n\n';
+    expect(openai.extractor.extract(payload(sse, undefined as unknown as string))).toEqual({
+      ...ZERO,
+      inputTokens: 13,
+      outputTokens: 4,
+    });
+  });
+
+  it('honors HOME when CODEX_HOME is unset', () => {
+    const home = mkdtempSync(join(tmpdir(), 'home-'));
+    mkdirSync(join(home, '.codex'));
+    writeFileSync(join(home, '.codex', 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt' }));
+    try {
+      expect(resolveUpstream(openai, { HOME: home })).toBe('https://chatgpt.com');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it('chat completions non-stream: prompt_tokens + completion_tokens', () => {

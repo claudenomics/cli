@@ -1,4 +1,4 @@
-import { anthropic, openai, type VendorConfig } from '@claudenomics/usage';
+import { anthropic, openai, resolveUpstream, type VendorConfig } from '@claudenomics/usage';
 
 export type Vendor = 'anthropic' | 'openai';
 
@@ -69,7 +69,7 @@ export function extractMeta(
   const text = responseBody.toString('utf8');
   const tokens = vendor.extractor.extract({
     method: 'POST',
-    url: vendor.upstream,
+    url: resolveUpstream(vendor, process.env),
     status: 200,
     requestBody: Buffer.alloc(0),
     responseBody,

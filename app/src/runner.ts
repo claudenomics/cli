@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { getSessionToken, loadSession } from '@claudenomics/auth';
 import { createLogger } from '@claudenomics/logger';
 import { startProxy, type ResponseHandler } from '@claudenomics/proxy';
-import { addUsage, newUsage, type TokenUsage } from '@claudenomics/usage';
+import { addUsage, newUsage, resolveUpstream, type TokenUsage } from '@claudenomics/usage';
 import { createRootAbortController } from './abort.js';
 import { BinaryNotFoundError, CliError } from './errors.js';
 import { createFileReceiptStore, type ReceiptStore } from './receipt-store.js';
@@ -24,7 +24,10 @@ interface EnclaveConfig {
   buildHeaders: () => Promise<Record<string, string>>;
 }
 
-async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | null> {
+async function loadEnclaveConfig(
+  vendorName: string,
+  extraHeaders: () => Record<string, string>,
+): Promise<EnclaveConfig | null> {
   const url = process.env.CLAUDENOMICS_ENCLAVE_URL;
   if (!url) return null;
   const session = await loadSession();
@@ -42,6 +45,7 @@ async function loadEnclaveConfig(vendorName: string): Promise<EnclaveConfig | nu
         [WALLET_HEADER]: session.wallet,
         [AUTH_HEADER]: `Bearer ${token}`,
         [VENDOR_HEADER]: vendorName,
+        ...extraHeaders(),
       };
     },
   };
@@ -55,7 +59,7 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   const vendor = getVendor(vendorName);
   const binaryPath = findBinary(binary);
   const totals: TokenUsage = newUsage();
-  const enclave = await loadEnclaveConfig(vendorName);
+  const enclave = await loadEnclaveConfig(vendorName, () => vendor.enclaveHeaders?.(process.env) ?? {});
   const root = createRootAbortController();
 
   let receiptStore: ReceiptStore | null = null;
@@ -74,14 +78,14 @@ export async function run(vendorName: string, binary: string, args: string[]): P
   if (receiptStore) handlers.push(persistAndSubmitReceipt(receiptStore, root.signal));
 
   const proxy = await startProxy({
-    upstream: enclave?.upstream ?? new URL(vendor.upstream),
+    upstream: enclave?.upstream ?? new URL(resolveUpstream(vendor, process.env)),
     onResponse: handlers,
     ...(enclave ? { requestHeaders: enclave.buildHeaders } : {}),
   });
 
   try {
     const env = vendor.childEnv(proxy.url, process.env);
-    const childArgs = vendor.childArgs ? vendor.childArgs(proxy.url, args) : args;
+    const childArgs = vendor.childArgs ? vendor.childArgs(proxy.url, args, process.env) : args;
     const { exitCode } = await spawnChild(binaryPath, childArgs, env);
     return exitCode;
   } finally {
