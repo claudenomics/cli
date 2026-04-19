@@ -73,6 +73,22 @@ export const text = {
     leaderboardSearch: 'Filter by handle or name.',
     leaderboardPage: 'Page number (default 1).',
     leaderboardPageSize: 'Entries per page, 1–100 (default 25).',
+    squad: 'Squad operations (view, join, leave, create, invite).',
+    squadView: 'Show a squad by slug with stats, members, and invite.',
+    squadViewPeriod: 'Period to summarize: day, week, month, or all (default all).',
+    squadJoin: 'Join a squad with an invite code.',
+    squadJoinPrimary: 'Set this squad as your primary squad.',
+    squadLeave: 'Leave a squad by slug.',
+    squadCreate: 'Create a squad; you become the captain.',
+    squadCreateName: 'Squad display name (defaults to the slug).',
+    squadInvite: 'Manage squad invites (create, revoke).',
+    squadInviteCreate: 'Create an invite code for your squad.',
+    squadInviteCreateLabel: 'Optional label for the invite.',
+    squadInviteCreateUses: 'Max uses (1–10000).',
+    squadInviteCreateExpires: 'Expiry duration like 1h, 7d.',
+    squadInviteRevoke: 'Revoke an invite code.',
+    invite: 'Join a squad via invite code (alias of `squad join`).',
+    invitePrimary: 'Set this squad as your primary squad.',
     status: 'Check session, enclave, backend reachability, and pending receipts.',
     update: 'Check npm for a newer version and print the upgrade command.',
     passthrough: (binary: string): string =>
@@ -169,6 +185,46 @@ export const text = {
     },
     pageFooter: (page: number, totalPages: number, total: number): string =>
       `page ${page} of ${totalPages}  ·  ${total} total`,
+  },
+
+  squad: {
+    requestFailed: (code: string): string => `Squad request failed: ${code}`,
+    notFound: (slug: string): string => `Squad not found: ${slug}`,
+    notMemberOrMissing: (slug: string): string =>
+      `Not a member of ${slug} (or squad doesn't exist)`,
+    captainCannotLeave:
+      "Captains can't leave their own squad. Transfer or disband it on the web app first.",
+    inviteUnavailable: 'Invite is revoked, expired, or out of uses',
+    inviteNotFound: (code: string): string => `Invite not found: ${code}`,
+    joinedSuccess: (name: string): string => `joined ${name}`,
+    leftSuccess: (slug: string): string => `left ${slug}`,
+    captainLabel: 'captain',
+    primaryLabel: 'primary',
+    verifiedBadge: 'verified',
+    memberCount: (n: number): string => `${n} member${n === 1 ? '' : 's'}`,
+    membersHeading: 'members',
+    moreMembers: (n: number): string => `… +${n} more`,
+    inviteHeading: 'invite',
+    inviteUses: (used: number, max: number): string => `${used}/${max} uses`,
+    inviteUsesUnlimited: (used: number): string => `${used} uses`,
+    neverExpires: 'never expires',
+    expired: 'expired',
+    expiresIn: (rel: string): string => `expires in ${rel}`,
+    squadUrl: (slug: string): string => `claudenomics.xyz/s/${slug}`,
+    slugTaken: (slug: string): string => `Slug already taken: ${slug}`,
+    invalidSlug: (slug: string): string =>
+      `Invalid slug: ${slug} (lowercase a–z, 0–9, and dashes; 2–32 chars)`,
+    createdSuccess: (name: string): string => `created ${name}`,
+    onlyCaptainsCan: 'Only the captain can manage this squad.',
+    badDuration: (s: string): string =>
+      `Invalid duration: ${s} (use 30m, 2h, 7d, etc.)`,
+    badUses: (s: string): string => `Invalid --uses value: ${s} (must be a positive integer)`,
+    inviteCreatedSuccess: (slug: string): string => `invite created for ${slug}`,
+    inviteJoinHint: (code: string): string =>
+      `share: claudenomics squad join ${code}`,
+    inviteRevokedSuccess: (code: string): string => `revoked invite ${code}`,
+    inviteNotFoundForSquad: (slug: string, code: string): string =>
+      `Invite ${code} not found on ${slug}`,
   },
 
   whoami: {

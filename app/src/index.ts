@@ -17,6 +17,14 @@ import { runLeaderboard } from './leaderboard.js';
 import { runLogin } from './login-ui.js';
 import { runLogout } from './logout-ui.js';
 import { runProfileView } from './profile.js';
+import {
+  runInviteCreate,
+  runInviteRevoke,
+  runSquadCreate,
+  runSquadJoin,
+  runSquadLeave,
+  runSquadView,
+} from './squad.js';
 import { runWhoami } from './whoami-ui.js';
 import { runStatus } from './status.js';
 import { styles } from './styles.js';
@@ -94,6 +102,52 @@ program
   .description(text.help.profile)
   .option('--period <p>', text.help.profilePeriod, 'all')
   .action(runProfileView);
+
+const squadCmd = program.command('squad').description(text.help.squad);
+
+squadCmd
+  .command('view <slug>')
+  .description(text.help.squadView)
+  .option('--period <p>', text.help.squadViewPeriod, 'all')
+  .action(runSquadView);
+
+squadCmd
+  .command('join <code>')
+  .description(text.help.squadJoin)
+  .option('--primary', text.help.squadJoinPrimary, false)
+  .action(runSquadJoin);
+
+squadCmd
+  .command('leave <slug>')
+  .description(text.help.squadLeave)
+  .action(runSquadLeave);
+
+squadCmd
+  .command('create <slug>')
+  .description(text.help.squadCreate)
+  .option('--name <name>', text.help.squadCreateName)
+  .action(runSquadCreate);
+
+const squadInviteCmd = squadCmd.command('invite').description(text.help.squadInvite);
+
+squadInviteCmd
+  .command('create <slug>')
+  .description(text.help.squadInviteCreate)
+  .option('--label <label>', text.help.squadInviteCreateLabel)
+  .option('--uses <n>', text.help.squadInviteCreateUses, parseIntOption)
+  .option('--expires-in <duration>', text.help.squadInviteCreateExpires)
+  .action(runInviteCreate);
+
+squadInviteCmd
+  .command('revoke <slug> <code>')
+  .description(text.help.squadInviteRevoke)
+  .action(runInviteRevoke);
+
+program
+  .command('invite <code>')
+  .description(text.help.invite)
+  .option('--primary', text.help.invitePrimary, false)
+  .action(runSquadJoin);
 
 program
   .command('leaderboard')
