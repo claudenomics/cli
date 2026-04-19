@@ -13,8 +13,10 @@ import { applyConfigToEnv, resolveConfig } from './config.js';
 import { CliError } from './errors.js';
 import { formatIdentity } from './format.js';
 import { printHome } from './home.js';
+import { runLeaderboard } from './leaderboard.js';
 import { runLogin } from './login-ui.js';
 import { runLogout } from './logout-ui.js';
+import { runProfileView } from './profile.js';
 import { runWhoami } from './whoami-ui.js';
 import { runStatus } from './status.js';
 import { styles } from './styles.js';
@@ -79,12 +81,30 @@ program
     await runLogout();
   });
 
+const parseIntOption = (v: string): number => Number.parseInt(v, 10);
+
 program
   .command('usage')
   .description(text.help.usage)
-  .action(async () => {
-    await runUsage();
-  });
+  .option('--period <p>', text.help.usagePeriod, 'all')
+  .action(runUsage);
+
+program
+  .command('profile [handle]')
+  .description(text.help.profile)
+  .option('--period <p>', text.help.profilePeriod, 'all')
+  .action(runProfileView);
+
+program
+  .command('leaderboard')
+  .description(text.help.leaderboard)
+  .option('--view <v>', text.help.leaderboardView, 'builders')
+  .option('--period <p>', text.help.leaderboardPeriod, 'all')
+  .option('--league <slug>', text.help.leaderboardLeague)
+  .option('--search <q>', text.help.leaderboardSearch)
+  .option('--page <n>', text.help.leaderboardPage, parseIntOption, 1)
+  .option('--page-size <n>', text.help.leaderboardPageSize, parseIntOption, 25)
+  .action(runLeaderboard);
 
 program
   .command('status')

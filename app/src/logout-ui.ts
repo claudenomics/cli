@@ -1,7 +1,8 @@
 import { loadSession, logout, type Session } from '@claudenomics/auth';
 import { type ProfileResponse, type UsageResponse } from '@claudenomics/api';
 import { colors } from '@claudenomics/logger';
-import { fetchProfile, fetchUsage, formatTokens, shortAddr } from './account.js';
+import { fetchProfile, fetchUsage } from './account.js';
+import { formatTokens, shortAddr } from './format.js';
 import { text } from './text.js';
 import { Spinner } from './ui.js';
 
