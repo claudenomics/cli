@@ -229,6 +229,7 @@ export const text = {
 
   whoami: {
     labels: {
+      handle: 'Handle',
       email: 'Email',
       wallet: 'Wallet',
       league: 'League',

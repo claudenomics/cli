@@ -1,7 +1,7 @@
-import { type ProfileResponse, type UsageResponse } from '@claudenomics/api';
+import { type ProfileMeResponse, type UsageResponse } from '@claudenomics/api';
 import { loadSession, type Session } from '@claudenomics/auth';
 import { colors } from '@claudenomics/logger';
-import { fetchProfile, fetchUsage } from './account.js';
+import { fetchMe, fetchUsage } from './account.js';
 import { styles } from './styles.js';
 import { text } from './text.js';
 import {
@@ -37,16 +37,18 @@ interface Row {
 
 function buildRows(
   session: Session,
-  profile: ProfileResponse | null,
+  me: ProfileMeResponse | null,
   usage: UsageResponse | null,
 ): { rows: Row[]; tokenRowIdx: number } {
   const L = text.whoami.labels;
   const rows: Row[] = [];
 
-  if (session.email) rows.push({ label: L.email, value: colors.primary(session.email) });
+  if (me?.handle) rows.push({ label: L.handle, value: colors.primary(`@${me.handle}`) });
+  const email = me?.email ?? session.email;
+  if (email) rows.push({ label: L.email, value: colors.primary(email) });
   rows.push({ label: L.wallet, value: colors.dim(session.wallet) });
-  if (profile?.league) rows.push({ label: L.league, value: colors.primary(profile.league) });
-  if (profile?.rank != null) rows.push({ label: L.rank, value: colors.accent(`#${profile.rank}`) });
+  if (me?.league) rows.push({ label: L.league, value: colors.primary(me.league) });
+  if (me?.rank != null) rows.push({ label: L.rank, value: colors.accent(`#${me.rank}`) });
 
   let tokenRowIdx = -1;
   if (usage) {
@@ -57,7 +59,10 @@ function buildRows(
     }
   }
 
-  rows.push({ label: L.session, value: colors.dim(formatExpiry(session.refreshExpiresAt - Date.now())) });
+  rows.push({
+    label: L.session,
+    value: colors.dim(formatExpiry(session.refreshExpiresAt - Date.now())),
+  });
 
   return { rows, tokenRowIdx };
 }
@@ -80,15 +85,12 @@ async function shimmerTokenRow(
   const delay = SHIMMER_DURATION_MS / SHIMMER_FRAMES;
   for (let f = 1; f <= SHIMMER_FRAMES; f++) {
     await sleep(delay);
-    // Move cursor up (rowsBelow + 1) lines to the token row, then clear and rewrite
     const moveUp = rowsBelow + 1;
     out.write(`\x1b[${moveUp}A\r\x1b[2K`);
     out.write(`${labelPart}${shimmerFrame(totalStr, f, SHIMMER_FRAMES)}\n`);
-    // Move cursor back down to original position
     if (rowsBelow > 0) out.write(`\x1b[${rowsBelow}B`);
   }
 
-  // Settle to final
   const moveUp = rowsBelow + 1;
   out.write(`\x1b[${moveUp}A\r\x1b[2K`);
   out.write(`${labelPart}${colors.accent(totalStr)}\n`);
@@ -102,18 +104,14 @@ export async function runWhoami(): Promise<void> {
     return;
   }
 
-  const [profile, usage] = await Promise.all([
-    fetchProfile(session.wallet),
-    fetchUsage(session.wallet),
-  ]);
+  const [me, usage] = await Promise.all([fetchMe(), fetchUsage(session.wallet)]);
 
-  const { rows, tokenRowIdx } = buildRows(session, profile, usage);
+  const { rows, tokenRowIdx } = buildRows(session, me, usage);
   const labelWidth = Math.max(...rows.map((r) => r.label.length));
 
   const out = process.stdout;
   out.write('\n');
 
-  // Initial render — token value starts dim if we will animate
   const animate = tokenRowIdx >= 0 && shouldAnimate();
   const initialRows = rows.map((row, i) => {
     if (i === tokenRowIdx && animate) {
