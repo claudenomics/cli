@@ -41,10 +41,15 @@ export interface UsageExtractor {
 
 export interface VendorConfig {
   name: string;
-  upstream: string;
+  upstream: string | ((base: NodeJS.ProcessEnv) => string);
   extractor: UsageExtractor;
   childEnv(proxyUrl: string, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
-  childArgs?(proxyUrl: string, args: readonly string[]): string[];
+  childArgs?(proxyUrl: string, args: readonly string[], base: NodeJS.ProcessEnv): string[];
+  enclaveHeaders?(base: NodeJS.ProcessEnv): Record<string, string>;
+}
+
+export function resolveUpstream(vendor: VendorConfig, base: NodeJS.ProcessEnv): string {
+  return typeof vendor.upstream === 'string' ? vendor.upstream : vendor.upstream(base);
 }
 
 export { anthropic } from './anthropic.js';

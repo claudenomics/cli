@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { resolveUpstream } from '@claudenomics/usage';
 import type { Attestor } from './attestor.js';
 import { CLAUDENOMICS_AUTH_HEADER, type AuthService } from './auth-service.js';
 import type { ServerConfig } from './config.js';
@@ -25,10 +26,18 @@ import {
 
 const WALLET_HEADER = 'x-claudenomics-wallet';
 const VENDOR_HEADER = 'x-claudenomics-vendor';
+const CODEX_AUTH_MODE_HEADER = 'x-claudenomics-codex-auth-mode';
 const RECEIPT_HEADER = 'x-claudenomics-receipt';
 const RECEIPT_SSE_EVENT = 'claudenomics-receipt';
 const ERROR_SSE_EVENT = 'claudenomics-error';
-const STRIPPED_HEADERS = [WALLET_HEADER, CLAUDENOMICS_AUTH_HEADER, VENDOR_HEADER, ...PROXY_UNSAFE];
+const CHATGPT_UPSTREAM = 'https://chatgpt.com';
+const STRIPPED_HEADERS = [
+  WALLET_HEADER,
+  CLAUDENOMICS_AUTH_HEADER,
+  VENDOR_HEADER,
+  CODEX_AUTH_MODE_HEADER,
+  ...PROXY_UNSAFE,
+];
 
 export interface ProxyService {
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
@@ -57,7 +66,7 @@ export function createProxyService(deps: ProxyDeps): ProxyService {
       }
 
       const vendor = requireVendor(req, deps);
-      const upstreamBase = new URL(vendor.config.upstream);
+      const upstreamBase = new URL(resolveUpstreamBase(vendor, req));
       const target = resolveUpstreamUrl(req.url, upstreamBase);
       const requestBody = await readBodyCapped(req, deps.config.maxRequestBytes);
 
@@ -95,6 +104,14 @@ function requireVendor(req: IncomingMessage, deps: ProxyDeps): SelectedVendor {
     );
   }
   return vendor;
+}
+
+function resolveUpstreamBase(vendor: SelectedVendor, req: IncomingMessage): string {
+  if (vendor.name === 'openai') {
+    const mode = readSingleHeader(req.headers, CODEX_AUTH_MODE_HEADER);
+    if (mode === 'chatgpt') return CHATGPT_UPSTREAM;
+  }
+  return resolveUpstream(vendor.config, process.env);
 }
 
 function resolveUpstreamUrl(reqUrl: string | undefined, base: URL): URL {
