@@ -139,8 +139,6 @@ describe('openai', () => {
       '-c',
       'model_providers.claudenomics_proxy.base_url="http://127.0.0.1:8787/v1"',
       '-c',
-      'model_providers.claudenomics_proxy.env_key="OPENAI_API_KEY"',
-      '-c',
       'model_providers.claudenomics_proxy.requires_openai_auth=true',
       '-c',
       'model_providers.claudenomics_proxy.wire_api="responses"',
