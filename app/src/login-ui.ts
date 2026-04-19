@@ -1,7 +1,7 @@
 import { AuthError, login, type Session } from '@claudenomics/auth';
-import { type ProfileResponse, type UsageResponse } from '@claudenomics/api';
+import { type ProfileMeResponse, type UsageResponse } from '@claudenomics/api';
 import { colors } from '@claudenomics/logger';
-import { fetchProfile, fetchUsage } from './account.js';
+import { fetchMe, fetchUsage } from './account.js';
 import { formatTokens, shortAddr } from './format.js';
 import { CliError } from './errors.js';
 import { text } from './text.js';
@@ -18,17 +18,19 @@ const INDENT = '   ';
 
 async function printSuccessCard(
   session: Session,
-  profile: ProfileResponse | null,
+  me: ProfileMeResponse | null,
   usage: UsageResponse | null,
 ): Promise<void> {
   const out = process.stdout;
   const sep = colors.dim('  ·  ');
 
   const parts: string[] = [];
-  if (session.email) parts.push(colors.primary(session.email));
+  if (me?.handle) parts.push(colors.primary(`@${me.handle}`));
+  const email = me?.email ?? session.email;
+  if (email) parts.push(colors.muted(email));
   parts.push(colors.dim(shortAddr(session.wallet)));
-  if (profile?.league) parts.push(colors.primary(profile.league));
-  if (profile?.rank != null) parts.push(colors.accent(`#${profile.rank}`));
+  if (me?.league) parts.push(colors.primary(me.league));
+  if (me?.rank != null) parts.push(colors.accent(`#${me.rank}`));
   if (usage) {
     const total = usage.inputTokens + usage.outputTokens;
     if (total > 0) {
@@ -79,10 +81,7 @@ export async function runLogin(opts: { authUrl?: string }): Promise<void> {
 
   spinner.stop();
 
-  const [profile, usage] = await Promise.all([
-    fetchProfile(session.wallet),
-    fetchUsage(session.wallet),
-  ]);
+  const [me, usage] = await Promise.all([fetchMe(), fetchUsage(session.wallet)]);
 
-  await printSuccessCard(session, profile, usage);
+  await printSuccessCard(session, me, usage);
 }
